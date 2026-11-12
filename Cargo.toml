@@ -5,9 +5,11 @@ edition = "2024"
 authors = ["Mark Ryall"]
 description = "A terminal typing tutor that walks a ZSA Voyager from QWERTY to the Very Normal layout, a few keys at a time"
 license = "MIT OR Apache-2.0"
+repository = "https://github.com/markryall/very-normal"
 readme = "README.md"
 keywords = ["cli", "tui", "typing", "keyboard", "zsa"]
 categories = ["command-line-utilities"]
+include = ["src/**", "examples/**", "tests/**", "tools/**", "Cargo.toml", "Cargo.lock", "README.md", "MAKE_YOUR_OWN.md"]
 
 [dependencies]
 anyhow = "1.0.104"
