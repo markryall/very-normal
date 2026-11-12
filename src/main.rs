@@ -24,6 +24,7 @@ usage: very-normal                  the trainer (TUI)
        very-normal make-plan [...]  make a layout and plan from your own typing
                                     (very-normal make-plan --help for its options)
        very-normal use <name>       switch plans; each plan keeps its own progress
+       very-normal remove <name>    delete a plan you made, its summary and its progress
        very-normal share [name]     share a plan's summary (no text) on GitHub
        very-normal keymap kanata|karabiner [stage] [--all-keyboards]
                                     a software keymap for keyboards without Oryx
@@ -144,6 +145,7 @@ fn main() -> Result<()> {
             }
         }
         ["use", name] => println!("{}", plans::switch(name, &path)?),
+        ["remove", name] => println!("{}", plans::remove(name, &path)?),
         ["make-plan", "-h" | "--help"] => print!("{}", optimise::USAGE),
         ["make-plan", rest @ ..] => {
             let made = optimise::make(&Options::parse(rest)?)?;

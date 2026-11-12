@@ -55,7 +55,9 @@ rerun it as often as you like with other text, locks or names. Your first
 plan becomes the active one. After that, switch with `very-normal use
 <name>` (`very-normal use very-normal` goes back to the built-in plan). Each
 plan keeps its own progress, so you can switch back and pick up where you
-left off. `very-normal plan` lists the plans you've made.
+left off. A plan whose stages are exactly the same as the one you're
+practising takes your progress with it. `very-normal plan` lists the plans
+you've made, and `very-normal remove <name>` deletes one.
 
 **Share your layout.** I'm curious how different everyone's layouts turn
 out. `very-normal share` opens a GitHub issue with the summary of the plan
@@ -79,6 +81,7 @@ very-normal check            # read the layout from Oryx and compare it with you
 very-normal plan             # which plan you're on, and its stages
 very-normal make-plan        # make a layout and plan from your own typing
 very-normal use <name>       # switch plans; each keeps its own progress
+very-normal remove <name>    # delete a plan you made, with its summary and progress
 very-normal share [name]     # share a plan's summary (no text) on GitHub
 very-normal keymap kanata    # this stage as a kanata config (or karabiner), for any keyboard
 very-normal stage 2          # set the stage you're practising

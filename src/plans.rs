@@ -91,7 +91,8 @@ pub fn activate(made: &Path) -> Result<()> {
 }
 
 /// Switches to another plan: parks this plan's progress, and brings back
-/// the other plan's progress if you've practised it before.
+/// the other plan's progress if you've practised it before. If you haven't,
+/// and its stages are exactly this plan's, your progress carries over.
 pub fn switch(target: &str, progress: &Path) -> Result<String> {
     let current = active_slug();
     let want = slug(target);
@@ -117,13 +118,14 @@ pub fn switch(target: &str, progress: &Path) -> Result<String> {
         std::fs::copy(&active, &keep).with_context(|| format!("keeping {}", keep.display()))?;
     }
 
-    if progress.exists() {
+    let back = parked(progress, &want);
+    let resumed = back.exists();
+    let carried = !resumed && progress.exists() && same_stages(layout::plan(), &plan);
+    if progress.exists() && !carried {
         let to = parked(progress, &current);
         std::fs::create_dir_all(to.parent().expect("has a parent"))?;
         std::fs::rename(progress, &to).with_context(|| format!("parking {}", to.display()))?;
     }
-    let back = parked(progress, &want);
-    let resumed = back.exists();
     if resumed {
         std::fs::rename(&back, progress)
             .with_context(|| format!("restoring {}", back.display()))?;
@@ -136,6 +138,12 @@ pub fn switch(target: &str, progress: &Path) -> Result<String> {
     } else {
         activate(&made)?;
     }
+    if carried {
+        return Ok(format!(
+            "Now practising {}. Its stages are the same as {current}'s, so your progress came with you.",
+            plan.name
+        ));
+    }
     Ok(format!(
         "Now practising {}{}. Your progress on {current} is kept for when you switch back.",
         plan.name,
@@ -144,6 +152,48 @@ pub fn switch(target: &str, progress: &Path) -> Result<String> {
         } else {
             " from the start"
         }
+    ))
+}
+
+/// Two plans whose stages have exactly the same keys share progress.
+fn same_stages(a: &Plan, b: &Plan) -> bool {
+    a.stages.len() == b.stages.len()
+        && a.stages
+            .iter()
+            .zip(&b.stages)
+            .all(|(x, y)| x.keys == y.keys)
+}
+
+/// Deletes a plan you made, its summary, and any progress kept for it.
+pub fn remove(name: &str, progress: &Path) -> Result<String> {
+    let want = slug(name);
+    if want == active_slug() {
+        bail!(
+            "{} is the plan you're practising; switch to another with `very-normal use` first",
+            layout::plan().name
+        );
+    }
+    let made = dir().join(format!("{want}.toml"));
+    if !made.exists() {
+        if want == builtin_slug() {
+            bail!("the built-in plan can't be removed");
+        }
+        bail!("no plan called {name}; you have: {}", list().join(", "));
+    }
+    let mut gone = vec![made.clone()];
+    std::fs::remove_file(&made)?;
+    for extra in [summary_of(&made), parked(progress, &want)] {
+        if extra.exists() {
+            std::fs::remove_file(&extra)?;
+            gone.push(extra);
+        }
+    }
+    Ok(format!(
+        "Removed {}.",
+        gone.iter()
+            .map(|p| p.display().to_string())
+            .collect::<Vec<_>>()
+            .join(", ")
     ))
 }
 

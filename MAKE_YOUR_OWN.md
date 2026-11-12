@@ -34,6 +34,8 @@ The summary holds no words or text from your writing. It has:
 - how often you type each of the 30 keys
 - how your layout, QWERTY, Colemak-DH, Norman and Very Normal score on your
   typing
+- the stages from QWERTY to your layout: which keys each one moves, and
+  how much of your typing lands on the home row along the way
 - every restart of the search, with its layout and score, and how many keys
   all of them agreed on
 

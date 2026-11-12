@@ -910,6 +910,8 @@ pub fn make(o: &Options) -> Result<Made> {
         lock: &o.lock,
         sources: &sources,
         stages: steps.len() - 1,
+        ladder: &steps,
+        stage_names: &titles.iter().map(|(n, _)| n.as_str()).collect::<Vec<_>>(),
         restarts: &results,
         agree,
         distinct,
@@ -953,6 +955,9 @@ struct SummaryInput<'a> {
     lock: &'a str,
     sources: &'a [&'static str],
     stages: usize,
+    /// Every stage's keys, QWERTY first, and what each is called.
+    ladder: &'a [String],
+    stage_names: &'a [&'a str],
     restarts: &'a [(f64, Positions)],
     agree: usize,
     distinct: usize,
@@ -1016,6 +1021,7 @@ fn summary(s: &SummaryInput) -> String {
         "scores": scores,
         "restarts": distinct_runs(&runs),
         "keys_every_restart_agreed_on": s.agree,
+        "stages": s.ladder.iter().skip(1).map(|k| rows(k)).collect::<Vec<_>>(),
         "version": env!("CARGO_PKG_VERSION"),
     });
     format!(
@@ -1028,6 +1034,7 @@ fn summary(s: &SummaryInput) -> String {
          - The search ran {n} times and found {distinct} different layouts, {spread:.4} apart in effort. \
          All {n} put {agree} of the 30 keys in the same place.\n\n\
          Scored on 20% of messages the optimiser never saw:\n\n{table}\n\
+         The stages from QWERTY, most-typed letters first:\n\n{ladder}\n\
          <details><summary>The numbers, for comparing layouts</summary>\n\n```json\n{json}\n```\n\n</details>\n\n\
          Made with [very-normal](https://github.com/markryall/very-normal) {version}.\n",
         name = s.name,
@@ -1046,10 +1053,45 @@ fn summary(s: &SummaryInput) -> String {
         qs = q.same_finger,
         n = runs.len(),
         json = serde_json::to_string(&data).expect("json"),
+        ladder = stage_table(s),
         version = env!("CARGO_PKG_VERSION"),
         distinct = s.distinct,
         agree = s.agree,
     )
+}
+
+/// Each stage's moves and how it does on your typing.
+fn stage_table(s: &SummaryInput) -> String {
+    let mut t = String::from(
+        "| Stage | | Moves | Home row | Same-finger pairs | Keys |\n|---|---|---|---|---|---|\n",
+    );
+    for (i, keys) in s.ladder.iter().enumerate() {
+        let m = metrics(s.model, keys, s.full);
+        let moves = if i == 0 {
+            String::new()
+        } else {
+            let before = s.ladder[i - 1].as_bytes();
+            let mut moved: Vec<char> = (0..30)
+                .filter(|k| before[*k] != keys.as_bytes()[*k])
+                .map(|k| keys.as_bytes()[k] as char)
+                .collect();
+            moved.sort_unstable();
+            moved
+                .iter()
+                .map(|c| c.to_string())
+                .collect::<Vec<_>>()
+                .join(" ")
+        };
+        let _ = writeln!(
+            t,
+            "| {i} | {} | {moves} | {:.0}% | {:.1}% | `{}` |",
+            s.stage_names.get(i).copied().unwrap_or(""),
+            m.home,
+            m.same_finger,
+            rows(keys)
+        );
+    }
+    t
 }
 
 /// Each different layout the restarts found, best first, and how many found it.
