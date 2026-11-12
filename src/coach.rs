@@ -69,7 +69,9 @@ fn day(ms: u64) -> NaiveDate {
 }
 
 fn minutes_on(runs: &[Run], date: NaiveDate) -> f64 {
-    runs.iter()
+    // an empty f64 sum is -0.0, which prints as "-0"
+    0.0 + runs
+        .iter()
         .filter(|r| day(r.t) == date)
         .map(secs)
         .sum::<f64>()

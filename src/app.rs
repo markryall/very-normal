@@ -265,13 +265,15 @@ impl App {
             .map(|i| 1 + usize::from(!i.detail.is_empty()))
             .sum::<usize>()
             + 1;
-        let middle_height = (next_lines.max(gate_lines) + 2).min(18) as u16;
+        // the trainer keeps at least 8 rows; the middle panels take what is left
+        let spare = frame.area().height.saturating_sub(3 + 1 + 5 + 1 + 8);
+        let middle_height = ((next_lines.max(gate_lines) + 2).min(18) as u16).min(spare);
         let [header, blurb, keyboard, middle, trainer, footer] = Layout::vertical([
             Constraint::Length(3),
             Constraint::Length(1),
             Constraint::Length(5),
             Constraint::Length(middle_height),
-            Constraint::Min(8),
+            Constraint::Fill(1),
             Constraint::Length(1),
         ])
         .areas(frame.area());
