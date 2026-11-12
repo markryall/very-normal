@@ -25,6 +25,8 @@ const ABANDON_WINDOW: std::time::Duration = std::time::Duration::from_secs(10 * 
 pub struct App {
     pub progress: Progress,
     path: PathBuf,
+    /// The troublesome keys this drill's words lean on.
+    leaning: Vec<char>,
     mode: Mode,
     drill: Drill,
     typing: bool,
@@ -55,6 +57,7 @@ impl App {
     pub fn new(progress: Progress, path: PathBuf, now: Instant) -> App {
         let mut rng = Rng::new();
         let stage = progress.stage.min(layout::last());
+        let leaning = crate::drill::leaning(Mode::Words, stage, &progress);
         let drill = Drill::new(
             Mode::Words,
             stage,
@@ -64,6 +67,7 @@ impl App {
         App {
             progress,
             path,
+            leaning,
             mode: Mode::Words,
             drill,
             typing: false,
@@ -90,6 +94,7 @@ impl App {
 
     fn new_drill(&mut self, now: Instant) {
         let text = build(self.mode, self.stage(), &self.progress, &mut self.rng);
+        self.leaning = crate::drill::leaning(self.mode, self.stage(), &self.progress);
         self.drill = Drill::new(self.mode, self.stage(), text, now);
     }
 
@@ -679,11 +684,11 @@ impl App {
             tabs.push(Span::styled(format!(" {} {} ", n + 1, m.label()), style));
             tabs.push(Span::raw(" "));
         }
-        let mut lines = vec![
-            Line::from(tabs),
-            Line::styled(self.mode.describe(s), dim()),
-            Line::raw(""),
-        ];
+        let mut lines = vec![Line::from(tabs), Line::styled(self.mode.describe(s), dim())];
+        if let Some(line) = self.leaning_line() {
+            lines.push(line);
+        }
+        lines.push(Line::raw(""));
         lines.extend(self.text_lines());
         lines.push(Line::raw(""));
         lines.push(self.status_line(now));
@@ -777,6 +782,20 @@ impl App {
             spans.push(Span::styled(shown.to_string(), style));
         }
         vec![Line::from(spans)]
+    }
+
+    /// Names the keys the words lean on: extra reps, said kindly.
+    fn leaning_line(&self) -> Option<Line<'static>> {
+        let keys: Vec<String> = self.leaning.iter().map(char::to_string).collect();
+        let named = match keys.as_slice() {
+            [] => return None,
+            [one] => one.clone(),
+            [rest @ .., last] => format!("{} and {last}", rest.join(", ")),
+        };
+        Some(Line::styled(
+            format!("A few extra words with {named} in them, your trickiest keys right now."),
+            dim(),
+        ))
     }
 
     fn status_line(&self, now: Instant) -> Line<'static> {
