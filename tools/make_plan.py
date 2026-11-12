@@ -308,7 +308,7 @@ def main():
     ap.add_argument("--oryx-layout", default="", help="your Oryx layout id, if you have a ZSA board")
     ap.add_argument("--home-row-mods", default="", help='ten comma-separated holds, e.g. ",ctrl,alt,cmd,,,cmd,alt,ctrl,"')
     ap.add_argument("--per-stage", type=int, default=2, help="swaps per stage (each swap moves two keys)")
-    ap.add_argument("--restarts", type=int, default=6)
+    ap.add_argument("--restarts", type=int, default=10)
     ap.add_argument("--iters", type=int, default=120000)
     ap.add_argument("--seed", type=int, default=7)
     ap.add_argument("--out", default="plan.toml")

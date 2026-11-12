@@ -45,7 +45,7 @@ Clone the repo, open Claude Code in it, and paste the prompt below.
 >      --out tmp/plan.toml --summary tmp/summary.md
 >    ```
 >
->    It takes a minute or two. Its six restarts usually land on slightly
+>    It takes a minute or two. Its ten restarts usually land on slightly
 >    different layouts that score almost the same. That's normal: many
 >    layouts tie for best.
 >
