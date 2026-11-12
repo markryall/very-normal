@@ -1,6 +1,6 @@
 //! Plain-text explanations shared by the command line and the TUI.
 
-use crate::layout::{self, LAST};
+use crate::layout;
 use crate::oryx::Snapshot;
 
 /// The Oryx edits that turn `stage - 1` into `stage`.
@@ -21,25 +21,25 @@ pub fn edits(stage: usize) -> Vec<String> {
 }
 
 pub fn next_stage(current: usize, url: &str) -> Vec<String> {
-    if current >= LAST {
+    if current >= layout::last() {
         return vec!["You're on the last stage. Nothing left to edit.".into()];
     }
     let next = current + 1;
     let mut out = vec![
-        format!("Stage {next}: {}", layout::NAMES[next]),
+        format!("Stage {next}: {}", layout::name(next)),
         format!("Edit: {url}"),
     ];
     out.extend(edits(next).into_iter().map(|e| format!("  {e}")));
     out.push(format!(
         "  vim to practise: {}",
-        layout::VIM[next].join(" ")
+        layout::vim(next).join(" ")
     ));
     out
 }
 
 /// The same, squeezed into a few lines for the TUI.
 pub fn next_stage_compact(current: usize, url: &str) -> Vec<String> {
-    if current >= LAST {
+    if current >= layout::last() {
         return vec!["You're on the last stage. Nothing left to edit.".into()];
     }
     let next = current + 1;
@@ -58,13 +58,13 @@ pub fn next_stage_compact(current: usize, url: &str) -> Vec<String> {
         .map(swap)
         .collect();
     let mut out = vec![
-        format!("Stage {next}: {}", layout::NAMES[next]),
+        format!("Stage {next}: {}", layout::name(next)),
         format!("keys: {}", keys.join("  ")),
     ];
     if !mirror.is_empty() {
         out.push(format!("mirror: {}", mirror.join("  ")));
     }
-    out.push(format!("vim: {}", layout::VIM[next].join(" ")));
+    out.push(format!("vim: {}", layout::vim(next).join(" ")));
     out.push(url.to_string());
     out
 }
@@ -93,11 +93,12 @@ pub fn check(snap: &Snapshot, current: usize) -> Vec<String> {
             ));
         }
         _ => {
-            let target = if current < LAST && snap.compare(current + 1).len() < findings.len() {
-                current + 1
-            } else {
-                current
-            };
+            let target =
+                if current < layout::last() && snap.compare(current + 1).len() < findings.len() {
+                    current + 1
+                } else {
+                    current
+                };
             let f = snap.compare(target);
             out.push(format!(
                 "Closest to stage {target}, with {} difference(s):",
@@ -128,7 +129,7 @@ mod tests {
 
     #[test]
     fn nothing_is_left_after_the_last_stage() {
-        assert_eq!(next_stage(LAST, "u").len(), 1);
+        assert_eq!(next_stage(layout::last(), "u").len(), 1);
         assert_eq!(next_stage(0, "u")[1], "Edit: u");
     }
 }

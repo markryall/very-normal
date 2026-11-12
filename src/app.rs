@@ -12,7 +12,7 @@ use ratatui::widgets::{Block, Paragraph, Wrap};
 
 use crate::drill::{Drill, Mode, Rng, build};
 use crate::gate;
-use crate::layout::{self, LAST};
+use crate::layout;
 use crate::store::{Progress, Run};
 use crate::{coach, oryx, report};
 
@@ -46,7 +46,7 @@ fn now_ms() -> u64 {
 impl App {
     pub fn new(progress: Progress, path: PathBuf, now: Instant) -> App {
         let mut rng = Rng::new();
-        let stage = progress.stage.min(LAST);
+        let stage = progress.stage.min(layout::last());
         let drill = Drill::new(
             Mode::Words,
             stage,
@@ -69,7 +69,7 @@ impl App {
     }
 
     fn stage(&self) -> usize {
-        self.progress.stage.min(LAST)
+        self.progress.stage.min(layout::last())
     }
 
     fn save(&mut self) {
@@ -84,7 +84,7 @@ impl App {
     }
 
     fn set_stage(&mut self, stage: usize, now: Instant) {
-        self.progress.stage = stage.min(LAST);
+        self.progress.stage = stage.min(layout::last());
         self.check.clear();
         self.message = None;
         self.save();
@@ -194,7 +194,9 @@ impl App {
         match key.code {
             KeyCode::Char('q') => self.should_quit = true,
             KeyCode::Left | KeyCode::Char('[') if stage > 0 => self.set_stage(stage - 1, now),
-            KeyCode::Right | KeyCode::Char(']') if stage < LAST => self.set_stage(stage + 1, now),
+            KeyCode::Right | KeyCode::Char(']') if stage < layout::last() => {
+                self.set_stage(stage + 1, now)
+            }
             KeyCode::Char(d @ '1'..='6') => {
                 self.mode = Mode::ALL[d as usize - '1' as usize];
                 self.message = None;
@@ -279,7 +281,7 @@ impl App {
         .areas(frame.area());
         self.render_header(frame, header);
         frame.render_widget(
-            Paragraph::new(layout::BLURBS[self.stage()])
+            Paragraph::new(layout::blurb(self.stage()))
                 .style(dim())
                 .wrap(Wrap { trim: true }),
             blurb,
@@ -301,14 +303,14 @@ impl App {
 
     fn render_header(&self, frame: &mut Frame, area: Rect) {
         let s = self.stage();
-        let (home, sfb) = layout::STATS[s];
+        let (home, sfb) = layout::stats(s);
         let title = Line::from(vec![
             Span::styled(
-                "very normal  ",
+                format!("{}  ", layout::plan().name.to_lowercase()),
                 Style::new().fg(PINK).add_modifier(Modifier::BOLD),
             ),
             Span::styled(
-                format!("stage {s} of {LAST} · {}", layout::NAMES[s]),
+                format!("stage {s} of {} · {}", layout::last(), layout::name(s)),
                 Style::new().add_modifier(Modifier::BOLD),
             ),
             Span::styled(
@@ -317,7 +319,7 @@ impl App {
             ),
         ]);
         let mut steps = Vec::new();
-        for i in 0..=LAST {
+        for i in 0..=layout::last() {
             let passed = gate::passed(&self.progress, i);
             let style = if i == s {
                 Style::new()
@@ -479,17 +481,20 @@ impl App {
             }
         }
         if gate::passed(&self.progress, s) {
-            let msg = if s < LAST {
+            let msg = if s < layout::last() {
                 format!(
                     "Gate passed. Make the stage {} edits, flash, then →.",
                     s + 1
                 )
             } else {
-                "Every gate passed. You type Very Normal.".into()
+                format!("Every gate passed. You type {}.", layout::plan().name)
             };
             lines.push(Line::styled(msg, Style::new().fg(Color::Green)));
         }
-        let block = Block::bordered().title(format!(" gate before stage {} ", (s + 1).min(LAST)));
+        let block = Block::bordered().title(format!(
+            " gate before stage {} ",
+            (s + 1).min(layout::last())
+        ));
         frame.render_widget(
             Paragraph::new(lines)
                 .block(block)

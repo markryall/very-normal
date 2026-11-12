@@ -5,7 +5,7 @@ use anyhow::{Context, Result, bail};
 use ratatui::DefaultTerminal;
 use ratatui::crossterm::event::{self, Event, KeyEventKind};
 use very_normal::app::App;
-use very_normal::layout::LAST;
+use very_normal::layout;
 use very_normal::store::{self, Progress};
 use very_normal::{coach, oryx, report};
 
@@ -19,6 +19,7 @@ usage: very-normal                  the trainer (TUI)
        very-normal stage <n>        set the stage you're practising (0-9)
        very-normal baseline <wpm>   type in a baseline instead of recording one
        very-normal import <file|->  merge a backup copied out of the web tutor
+       very-normal plan             which plan you're on, and its stages
        very-normal export           print your progress as JSON
        very-normal --help | --version
 
@@ -29,6 +30,7 @@ The Oryx layout is Xx6pM ($VERY_NORMAL_LAYOUT); URLs open with `open`
 
 fn main() -> Result<()> {
     let args: Vec<String> = std::env::args().skip(1).collect();
+    let plan_file = layout::install()?;
     let path = store::default_path();
     let words: Vec<&str> = args.iter().map(String::as_str).collect();
     match words.as_slice() {
@@ -57,8 +59,8 @@ fn main() -> Result<()> {
         }
         ["stage", n] => {
             let n: usize = n.parse().context("the stage is a number")?;
-            if n > LAST {
-                bail!("there are only stages 0 to {LAST}");
+            if n > layout::last() {
+                bail!("there are only stages 0 to {}", layout::last());
             }
             let mut p = Progress::load(&path)?;
             p.stage = n;
@@ -103,6 +105,20 @@ fn main() -> Result<()> {
                 a.streak,
                 p.stage
             );
+        }
+        ["plan"] => {
+            let plan = layout::plan();
+            match &plan_file {
+                Some(p) => println!("Plan: {} ({})", plan.name, p.display()),
+                None => println!(
+                    "Plan: {} (built in; make your own at {})",
+                    plan.name,
+                    layout::plan_path().display()
+                ),
+            }
+            for s in 0..=layout::last() {
+                println!("  {s}: {}  {}", layout::keys_string(s), layout::name(s));
+            }
         }
         ["export"] => println!("{}", serde_json::to_string_pretty(&Progress::load(&path)?)?),
         _ => {

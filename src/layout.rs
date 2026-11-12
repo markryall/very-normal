@@ -1,90 +1,179 @@
-//! The ladder from QWERTY to Very Normal: one 30-key string per stage.
+//! The plan: the ladder of stages from where you start to your own layout.
 //!
-//! Positions run left to right, top row then home row then bottom row, ten
-//! keys a row (five per hand). Only letters and `; , . /` live here; the
-//! quote key and the outer columns never move.
+//! A plan is a TOML file (see `examples/very-normal.toml`). Positions run
+//! left to right, top row then home row then bottom row, ten keys a row (five
+//! per hand). Only letters and `; , . / '` live here; the outer columns never
+//! move.
 
-pub const STAGES: [&str; 10] = [
-    "qwertyuiopasdfghjkl;zxcvbnm,./",
-    "qwlrfyuiopasdtghjke;zxcvbnm,./",
-    "qwlrfyuakpisdtghjoe;zxcvbnm,./",
-    "qwlrfyuakpidstghnoe;zxcvbjm,./",
-    "qwl;fyhakpidstgunoerzxcvbjm,./",
-    "qw;dfyhakpilstgunoerzxcvbjm,./",
-    "qw;dfyhaukilstgpnoerzxcvbjm,./",
-    "qw;dgyhaukilstmpnoerzxcvbjf,./",
-    "qwydgbhaukilstmpnoerzxcv;jf,./",
-    "qwydgbhaujilstmpnoerzxcvk;f,./",
-];
+use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 
-pub const LAST: usize = STAGES.len() - 1;
+use anyhow::{Context, Result, bail};
+use serde::Deserialize;
 
-pub const NAMES: [&str; 10] = [
-    "Baseline",
-    "E and T come home",
-    "I and O come home",
-    "S and N come home",
-    "R comes home",
-    "L and D settle",
-    "U and P settle",
-    "G and M settle",
-    "Y and B settle",
-    "Fully Very Normal",
-];
-
-pub const BLURBS: [&str; 10] = [
-    "Your layout as it is today. Record three 60-second real-text runs so later stages have numbers to beat.",
-    "The two most common letters move onto the home row. Same-finger pairs drop by almost half straight away.",
-    "I and O come home. A moves up to the top row, where it stays.",
-    "S and N come home. 61% of your typing now lands on the home row.",
-    "R takes the right pinky home key, and H and U trade places.",
-    "L and D take their final spots. ; keeps wandering until the last stage.",
-    "U and P settle. Same-finger pairs fall to 1.7%.",
-    "G and M settle on the inner columns.",
-    "Y and B settle on the top row.",
-    "The last keys land. You're on the Very Normal layout.",
-];
-
-/// Share of your typing on the home row, and same-finger pairs, per stage.
-pub const STATS: [(u8, f32); 10] = [
-    (33, 6.5),
-    (49, 3.9),
-    (55, 4.1),
-    (61, 3.9),
-    (64, 3.0),
-    (64, 2.7),
-    (64, 1.7),
-    (65, 1.4),
-    (65, 1.2),
-    (65, 1.0),
-];
-
-/// Vim commands that use the keys a stage moves.
-pub const VIM: [&[&str]; 10] = [
-    &[],
-    &["e", "f", "t", "l"],
-    &["a", "i", "o", "k"],
-    &["dd", "j", "n", "s"],
-    &["h", "r", "u"],
-    &["dw", "l", ";"],
-    &["k", "p", "u"],
-    &["f", "gg", "m"],
-    &["b", "yy", ";"],
-    &["j", "k", ";"],
-];
-
-/// Home row mods: position and what the key does when held.
-pub const MODS: [(usize, &str); 6] = [
-    (11, "ctrl"),
-    (12, "alt"),
-    (13, "cmd"),
-    (16, "cmd"),
-    (17, "alt"),
-    (18, "ctrl"),
-];
+/// Mark's plan, used when you haven't made your own.
+pub const EXAMPLE: &str = include_str!("../examples/very-normal.toml");
 
 pub const OUTER_LEFT: [&str; 3] = ["tab", "esc", "shf"];
 pub const OUTER_RIGHT: [&str; 3] = ["bsp", "'", "ent"];
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct Plan {
+    pub name: String,
+    #[serde(default)]
+    pub oryx_layout: Option<String>,
+    /// What each home row key does when held, left to right.
+    #[serde(default)]
+    pub home_row_mods: Vec<String>,
+    #[serde(default)]
+    pub common_words: Vec<String>,
+    #[serde(rename = "stage")]
+    pub stages: Vec<Stage>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct Stage {
+    pub name: String,
+    #[serde(default)]
+    pub blurb: String,
+    pub keys: String,
+    /// Share of your typing on the home row at this stage.
+    #[serde(default)]
+    pub home: f64,
+    /// Share of letter pairs typed with the same finger at this stage.
+    #[serde(default)]
+    pub same_finger: f64,
+    #[serde(default)]
+    pub vim: Vec<String>,
+    #[serde(default)]
+    pub words: Vec<String>,
+}
+
+impl Plan {
+    pub fn parse(text: &str) -> Result<Plan> {
+        let mut plan: Plan = toml::from_str(text)?;
+        for stage in &mut plan.stages {
+            stage.keys.retain(|c| !c.is_whitespace());
+        }
+        plan.validate()?;
+        Ok(plan)
+    }
+
+    pub fn load(path: &Path) -> Result<Plan> {
+        let text =
+            std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
+        Plan::parse(&text).with_context(|| format!("in {}", path.display()))
+    }
+
+    fn validate(&self) -> Result<()> {
+        if self.stages.len() < 2 {
+            bail!("a plan needs at least two stages: where you start and where you're going");
+        }
+        let mut start: Vec<char> = self.stages[0].keys.chars().collect();
+        start.sort_unstable();
+        for (i, stage) in self.stages.iter().enumerate() {
+            let mut k: Vec<char> = stage.keys.chars().collect();
+            if k.len() != 30 {
+                bail!(
+                    "stage {i} has {} keys; every stage has 30 (three rows of ten)",
+                    k.len()
+                );
+            }
+            k.sort_unstable();
+            if k != start {
+                bail!("stage {i} isn't a rearrangement of stage 0's keys");
+            }
+            if i > 0 && stage.keys == self.stages[i - 1].keys {
+                bail!("stage {i} doesn't move any keys");
+            }
+        }
+        if !self.home_row_mods.is_empty() && self.home_row_mods.len() != 10 {
+            bail!(
+                "home_row_mods has {} entries; it needs 10, one per home row key",
+                self.home_row_mods.len()
+            );
+        }
+        if self.common_words.len() < 50 {
+            bail!(
+                "common_words needs at least 50 words for the drills; it has {}",
+                self.common_words.len()
+            );
+        }
+        for m in &self.home_row_mods {
+            if !matches!(m.as_str(), "" | "ctrl" | "alt" | "cmd" | "shift") {
+                bail!("home_row_mods can hold ctrl, alt, cmd, shift or \"\", not {m:?}");
+            }
+        }
+        Ok(())
+    }
+}
+
+/// `$VERY_NORMAL_PLAN`, or `~/.config/very-normal/plan.toml`.
+pub fn plan_path() -> PathBuf {
+    if let Some(p) = std::env::var_os("VERY_NORMAL_PLAN") {
+        return PathBuf::from(p);
+    }
+    let home = std::env::var_os("HOME")
+        .map(PathBuf::from)
+        .unwrap_or_default();
+    home.join(".config/very-normal/plan.toml")
+}
+
+static PLAN: OnceLock<Plan> = OnceLock::new();
+
+/// Loads your plan if you have one, otherwise Mark's. Call once at startup;
+/// says which file it used, or `None` for the built-in example.
+pub fn install() -> Result<Option<PathBuf>> {
+    let path = plan_path();
+    let (plan, used) = if path.exists() {
+        (Plan::load(&path)?, Some(path))
+    } else {
+        (example(), None)
+    };
+    let _ = PLAN.set(plan);
+    Ok(used)
+}
+
+fn example() -> Plan {
+    Plan::parse(EXAMPLE).expect("the example plan is valid")
+}
+
+pub fn plan() -> &'static Plan {
+    PLAN.get_or_init(example)
+}
+
+pub fn last() -> usize {
+    plan().stages.len() - 1
+}
+
+fn stage(s: usize) -> &'static Stage {
+    &plan().stages[s.min(last())]
+}
+
+pub fn name(s: usize) -> &'static str {
+    &stage(s).name
+}
+
+pub fn blurb(s: usize) -> &'static str {
+    &stage(s).blurb
+}
+
+/// Home row share and same-finger pairs, both as percentages.
+pub fn stats(s: usize) -> (f64, f64) {
+    (stage(s).home, stage(s).same_finger)
+}
+
+pub fn vim(s: usize) -> &'static [String] {
+    &stage(s).vim
+}
+
+pub fn words(s: usize) -> &'static [String] {
+    &stage(s).words
+}
+
+pub fn common_words() -> &'static [String] {
+    &plan().common_words
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Change {
@@ -99,17 +188,21 @@ impl Change {
     }
 }
 
-pub fn keys(stage: usize) -> Vec<char> {
-    STAGES[stage].chars().collect()
+pub fn keys(s: usize) -> Vec<char> {
+    stage(s).keys.chars().collect()
+}
+
+pub fn keys_string(s: usize) -> &'static str {
+    &stage(s).keys
 }
 
 /// The keys that change when you climb from `stage - 1` to `stage`.
-pub fn changes(stage: usize) -> Vec<Change> {
-    if stage == 0 || stage > LAST {
+pub fn changes(s: usize) -> Vec<Change> {
+    if s == 0 || s > last() {
         return Vec::new();
     }
-    let before = keys(stage - 1);
-    keys(stage)
+    let before = keys(s - 1);
+    keys(s)
         .into_iter()
         .enumerate()
         .filter(|(i, c)| before[*i] != *c)
@@ -122,9 +215,9 @@ pub fn changes(stage: usize) -> Vec<Change> {
 }
 
 /// The characters a stage puts somewhere new, in key order.
-pub fn focus(stage: usize) -> Vec<char> {
+pub fn focus(s: usize) -> Vec<char> {
     let mut out = Vec::new();
-    for c in changes(stage) {
+    for c in changes(s) {
         if !out.contains(&c.to) {
             out.push(c.to);
         }
@@ -132,21 +225,23 @@ pub fn focus(stage: usize) -> Vec<char> {
     out
 }
 
-/// Whether a position types something different from QWERTY at this stage.
-pub fn moved(stage: usize, index: usize) -> bool {
-    keys(stage)[index] != keys(0)[index]
+/// Whether a position types something different from stage 0.
+pub fn moved(s: usize, index: usize) -> bool {
+    keys(s)[index] != keys(0)[index]
 }
 
-pub fn changed_now(stage: usize, index: usize) -> bool {
-    changes(stage).iter().any(|c| c.index == index)
+pub fn changed_now(s: usize, index: usize) -> bool {
+    changes(s).iter().any(|c| c.index == index)
 }
 
+/// What a key does when held, for home row positions 10 to 19.
 pub fn modifier(index: usize) -> Option<&'static str> {
-    MODS.iter().find(|(i, _)| *i == index).map(|(_, m)| *m)
+    let m = plan().home_row_mods.get(index.checked_sub(10)?)?;
+    (!m.is_empty()).then_some(m.as_str())
 }
 
-pub fn position(stage: usize, ch: char) -> Option<usize> {
-    keys(stage).iter().position(|c| *c == ch)
+pub fn position(s: usize, ch: char) -> Option<usize> {
+    keys(s).iter().position(|c| *c == ch)
 }
 
 /// The left-hand position that mirrors a right-hand one, and the reverse.
@@ -157,7 +252,7 @@ pub fn mirror(index: usize) -> usize {
 
 /// Which stage a main layer's 30 letter keys match, if any.
 pub fn find_stage(main: &str) -> Option<usize> {
-    STAGES.iter().position(|s| *s == main)
+    plan().stages.iter().position(|s| s.keys == main)
 }
 
 #[cfg(test)]
@@ -165,32 +260,24 @@ mod tests {
     use super::*;
 
     #[test]
-    fn every_stage_is_a_rearrangement_of_qwerty() {
-        let mut qwerty = keys(0);
-        qwerty.sort();
-        for stage in 0..=LAST {
-            let mut k = keys(stage);
-            k.sort();
-            assert_eq!(k, qwerty, "stage {stage}");
-        }
-    }
-
-    #[test]
-    fn the_last_stage_is_very_normal() {
-        assert_eq!(STAGES[LAST], "qwydgbhaujilstmpnoerzxcvk;f,./");
+    fn the_example_is_marks_very_normal() {
+        let p = plan();
+        assert_eq!(p.name, "Very Normal");
+        assert_eq!(last(), 9);
+        assert_eq!(keys_string(0), "qwertyuiopasdfghjkl;zxcvbnm,./");
+        assert_eq!(keys_string(last()), "qwydgbhaujilstmpnoerzxcvk;f,./");
+        assert_eq!(modifier(13), Some("cmd"));
+        assert_eq!(modifier(10), None);
+        assert_eq!(modifier(3), None);
     }
 
     #[test]
     fn every_stage_moves_a_few_keys_and_keeps_the_shortcuts() {
-        for stage in 1..=LAST {
-            let n = changes(stage).len();
-            assert!((3..=5).contains(&n), "stage {stage} moves {n}");
+        for s in 1..=last() {
+            let n = changes(s).len();
+            assert!((3..=5).contains(&n), "stage {s} moves {n}");
             for c in "qwzxcv".chars() {
-                assert_eq!(
-                    position(stage, c),
-                    position(0, c),
-                    "{c} moved in stage {stage}"
-                );
+                assert_eq!(position(s, c), position(0, c), "{c} moved in stage {s}");
             }
         }
     }
@@ -211,9 +298,54 @@ mod tests {
 
     #[test]
     fn find_stage_recognises_each_stage() {
-        for (i, s) in STAGES.iter().enumerate() {
-            assert_eq!(find_stage(s), Some(i));
+        for s in 0..=last() {
+            assert_eq!(find_stage(keys_string(s)), Some(s));
         }
         assert_eq!(find_stage("nope"), None);
+    }
+
+    fn plan_with(stages: &[&str], extra: &str) -> Result<Plan> {
+        let mut t = format!("name = \"t\"\n{extra}\n");
+        t.push_str("common_words = [");
+        for i in 0..60 {
+            t.push_str(&format!("\"w{i}\", "));
+        }
+        t.push_str("]\n");
+        for (i, k) in stages.iter().enumerate() {
+            t.push_str(&format!("[[stage]]\nname = \"s{i}\"\nkeys = \"{k}\"\n"));
+        }
+        Plan::parse(&t)
+    }
+
+    #[test]
+    fn rejects_broken_plans() {
+        let q = "qwertyuiop asdfghjkl; zxcvbnm,./";
+        let swap = "qwertyuiop asdfghjkl; zxcvbmn,./";
+        assert!(plan_with(&[q, swap], "").is_ok());
+        assert!(
+            plan_with(&[q], "")
+                .unwrap_err()
+                .to_string()
+                .contains("two stages")
+        );
+        assert!(
+            plan_with(&[q, q], "")
+                .unwrap_err()
+                .to_string()
+                .contains("doesn't move")
+        );
+        assert!(
+            plan_with(&[q, "qwertyuiop"], "")
+                .unwrap_err()
+                .to_string()
+                .contains("30")
+        );
+        assert!(
+            plan_with(&[q, "qwertyuiop asdfghjkl; zxcvbnm,.!"], "")
+                .unwrap_err()
+                .to_string()
+                .contains("rearrangement")
+        );
+        assert!(plan_with(&[q, swap], "home_row_mods = [\"hyper\"]").is_err());
     }
 }

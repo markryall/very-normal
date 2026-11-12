@@ -1,0 +1,255 @@
+# A plan for very-normal: the stages from QWERTY to your own layout.
+#
+# Keys are three rows of ten (five per hand), top row first, written as
+# "qwertyuiop asdfghjkl; zxcvbnm,./". The quote key and the outer columns
+# never move. Stage 0 is where you start; each later stage only rearranges
+# the keys of the stage before it.
+
+name = "Very Normal"
+# Your Oryx layout id (the part after /layouts/ in its link). The link must be public.
+oryx_layout = "Xx6pM"
+# What each home row key does when held, left to right: ctrl, alt, cmd or shift.
+# Leave a key empty if it has no hold. `check` makes sure these survive every stage.
+home_row_mods = ["", "ctrl", "alt", "cmd", "", "", "cmd", "alt", "ctrl", ""]
+
+# Common words, most frequent first: the real-text, links and mirror drills.
+common_words = [
+  "the", "to", "a", "and", "it", "that", "is", "i", "in", "for", "of", "be", "we",
+  "so", "with", "can", "this", "you", "are", "on", "do", "have", "what", "push", "if",
+  "or", "but", "yes", "ok", "just", "as", "not", "then", "up", "an", "let's", "like",
+  "from", "one", "new", "all", "there", "no", "how", "would", "was", "at", "order",
+  "add", "should", "when", "yeah", "some", "will", "by", "could", "make", "now",
+  "they", "also", "need", "about", "cool", "them", "does", "any", "those", "only",
+  "get", "perhaps", "think", "please", "more", "my", "see", "into", "work", "build",
+  "deploy", "go", "each", "where", "people", "file", "me", "want", "am", "run",
+  "start", "next", "main", "use", "time", "something", "might", "other", "which",
+  "first", "set", "change", "move", "did", "still", "been", "already", "project",
+  "back", "check", "world", "commit", "same", "thing", "again", "create", "very",
+  "out", "board", "had", "don't", "these", "name", "because", "your", "version",
+  "here", "agent", "right", "session", "than", "that's", "supplier", "company",
+  "before", "list", "step", "way", "look", "plan", "note", "number", "i'd", "both",
+  "actually", "her", "production", "their", "another", "id", "it's", "off", "data",
+  "day", "after", "may", "code", "release", "try", "done", "were", "side", "take",
+  "old", "show", "write", "folder", "user", "i'm", "page", "what's", "sure",
+  "different", "never", "customer", "possible", "most", "calendar", "running", "know",
+  "update", "every", "own", "too", "she", "per", "maybe", "keep", "sense", "fix",
+  "someone", "its", "around", "nothing", "two", "really", "instead", "once", "event",
+  "kind", "staging", "switch", "i'll", "good", "useful", "token", "why", "external",
+  "down", "link", "private", "well", "later", "put", "find", "always", "open", "idea",
+  "going", "slack", "card", "fish", "anything", "public", "through", "integration",
+  "able", "who", "local", "recent", "seem", "without", "can't", "last", "yet", "admin",
+  "table", "while", "spec", "place", "artifact", "even", "end", "us", "home",
+  "command", "better", "reference", "git", "stop", "everything", "three", "separate",
+  "toggle", "happen", "come", "i've", "made", "used", "feel", "few", "fine", "feature",
+  "allow", "probably", "function", "else", "specific", "key", "there's", "since",
+  "needs", "font", "remove", "support", "leave", "script", "doing", "between", "query",
+  "test", "yep", "days", "our", "week", "point", "ref", "edit", "pretty", "added",
+  "ever", "multiple", "information", "date", "free", "copy", "delete", "read", "ask",
+  "full", "gem", "send", "tell", "until", "much", "issue", "access", "ship", "product",
+  "guess", "browser", "development", "whatever", "currently", "today", "archive",
+  "rather", "current", "field", "ahead", "example", "whether", "split", "somewhere",
+  "sometimes", "address", "include", "server", "credit", "secret", "install", "often",
+  "bit", "specs", "nice", "invoice", "moment", "lot", "give", "option", "fly",
+  "environment", "either", "various", "case", "together", "client", "process",
+  "password", "path", "match", "describe", "across", "being", "message", "semaphore",
+  "document", "desired", "remind", "exactly", "related", "capture", "via", "appear",
+  "person", "built", "mean", "ah", "music", "management", "anyone", "venue", "missing",
+  "publish", "annoying", "latest", "inventory", "we've", "job", "description",
+  "locally", "let", "working", "live", "say", "situation", "reminder", "site",
+  "location", "island", "inbound", "root", "works", "little", "stuff", "tomorrow",
+  "making", "assume", "consider", "unless", "away", "peak", "flow", "everyone", "text",
+  "line", "status", "record", "search", "account", "part", "wrong", "deal", "ai",
+  "whole", "sync", "track", "getting", "content", "quite", "year", "grab", "thought",
+  "night", "setting", "over", "ha", "load", "links", "io", "default", "looking",
+  "hidden", "ready", "otherwise", "approach", "written", "remember", "terminal",
+  "brew", "definitely", "rule", "help", "enough", "health", "left", "house", "won't",
+  "long", "minimum", "meeting", "though", "dev", "cute", "phone", "removed", "active",
+  "slice", "sheet", "backstage", "value", "thinking", "kinesis", "agreement",
+  "available", "mac", "during", "perfect", "branch", "sent", "he", "likely", "tool",
+  "completely", "associated", "deployment", "screen", "channel", "locked", "present",
+  "application", "type", "history", "outside", "error", "fixed", "problem", "clean",
+  "property", "summary", "longer", "many", "happy", "keyboard", "large", "mention"
+]
+
+[[stage]]
+name = "Baseline"
+blurb = "Your layout as it is today. Record three 60-second real-text runs so later stages have numbers to beat."
+keys = "qwertyuiop asdfghjkl; zxcvbnm,./"
+home = 33
+same_finger = 6.5
+vim = []
+
+[[stage]]
+name = "E and T come home"
+blurb = "The two most common letters move onto the home row. Same-finger pairs drop by almost half straight away."
+keys = "qwlrfyuiop asdtghjke; zxcvbnm,./"
+home = 49
+same_finger = 3.9
+vim = ["e", "f", "t", "l"]
+words = [
+  "feel", "delete", "different", "tell", "release", "file", "little", "reference",
+  "better", "left", "well", "these", "there", "still", "let's", "after", "external",
+  "feature", "let", "else", "between", "event", "test", "free", "later", "please",
+  "people", "create", "before", "full", "folder", "development", "latest", "table",
+  "three", "multiple", "the", "set", "see", "off", "get", "all", "really", "useful",
+  "related", "leave", "excellent", "definitely", "recent", "together", "text",
+  "completely", "field", "default", "level", "toggle", "actually", "template", "often",
+  "title", "perfect", "yet", "pretty", "will", "were", "time", "they", "then", "them",
+  "that", "take", "step", "note", "next", "need", "list", "like", "here", "been",
+  "few"
+]
+
+[[stage]]
+name = "I and O come home"
+blurb = "I and O come home. A moves up to the top row, where it stays."
+keys = "qwlrfyuakp isdtghjoe; zxcvbnm,./"
+home = 55
+same_finger = 4.1
+vim = ["a", "i", "o", "k"]
+words = [
+  "look", "again", "information", "too", "integration", "looking", "location",
+  "application", "work", "take", "make", "main", "like", "into", "data", "cool",
+  "back", "also", "situation", "hook", "know", "option", "production", "ask", "kind",
+  "good", "artifact", "link", "available", "idea", "think", "board", "about",
+  "invoice", "making", "various", "via", "associated", "indication", "working",
+  "token", "bookmark", "commit", "addition", "slack", "going", "local", "kick", "book",
+  "admin", "annoying", "around", "kinesis", "automatically", "tomorrow", "allow",
+  "initial", "version", "session", "company", "another", "already", "doing", "point",
+  "pagination", "additional", "always", "approach", "root", "australian", "thinking",
+  "peak", "away", "someone", "today", "nothing", "instead", "load"
+]
+
+[[stage]]
+name = "S and N come home"
+blurb = "S and N come home. 61% of your typing now lands on the home row."
+keys = "qwlrfyuakp idstghnoe; zxcvbjm,./"
+home = 61
+same_finger = 3.9
+vim = ["dd", "j", "n", "s"]
+words = [
+  "session", "sense", "send", "address", "did", "and", "add", "sessions", "needs",
+  "running", "added", "instead", "end", "sending", "understand", "side", "need",
+  "just", "done", "does", "kind", "down", "find", "island", "unsigned", "don't",
+  "unless", "hidden", "desired", "used", "missing", "inbound", "days", "sound",
+  "password", "should", "admin", "annoying", "inside", "around", "kinesis", "consider",
+  "discuss", "version", "second", "since", "doing", "standard", "non", "issue",
+  "someone", "guess", "nothing", "sync", "environment", "staging", "specs", "finished",
+  "possible", "calendar", "sent", "design", "considered", "depending", "something",
+  "description", "access", "command", "snapshot", "decision", "different", "soon",
+  "said", "associated", "links", "anything", "necessary", "kids", "consistent"
+]
+
+[[stage]]
+name = "R comes home"
+blurb = "R takes the right pinky home key, and H and U trade places."
+keys = "qwl;fyhakp idstgunoer zxcvbjm,./"
+home = 64
+same_finger = 3.0
+vim = ["h", "r", "u"]
+words = [
+  "through", "run", "her", "your", "push", "here", "user", "rather", "sure", "our",
+  "current", "whether", "error", "which", "where", "there", "their", "right", "other",
+  "order", "though", "should", "number", "much", "thought", "currently", "structure",
+  "hour", "three", "around", "useful", "perhaps", "another", "query", "running",
+  "further", "supplier", "curious", "rule", "customer", "without", "feature", "server",
+  "either", "there's", "support", "four", "production", "require", "refresh", "house",
+  "true", "product", "browser", "archive", "turn", "although", "reference", "various",
+  "search", "record", "you", "use", "try", "the", "out", "how", "had", "for", "but",
+  "are", "harder", "health", "enough", "fresh", "whatever", "particular", "capture",
+  "she"
+]
+
+[[stage]]
+name = "L and D settle"
+blurb = "L and D take their final spots. ; keeps wandering until the last stage."
+keys = "qw;dfyhakp ilstgunoer zxcvbjm,./"
+home = 64
+same_finger = 2.7
+vim = ["dw", "l", ";"]
+words = [
+  "old", "did", "all", "add", "added", "will", "i'll", "well", "would", "world",
+  "still", "could", "build", "locally", "should", "deploy", "tell", "full", "folder",
+  "local", "really", "allow", "already", "field", "load", "deal", "actually",
+  "calendar", "ideally", "delete", "told", "call", "loaded", "island", "include",
+  "address", "skill", "install", "little", "disabled", "multiple", "hidden", "i'd",
+  "had", "day", "and", "desired", "middle", "related", "locked", "likely", "null",
+  "land", "fill", "displayed", "default", "older", "level", "decided", "gold", "silly",
+  "end", "decide", "side", "plan", "only", "need", "look", "list", "like", "file",
+  "done", "does", "data", "cool", "code", "also", "parallel", "shell"
+]
+
+[[stage]]
+name = "U and P settle"
+blurb = "U and P settle. Same-finger pairs fall to 1.7%."
+keys = "qw;dfyhauk ilstgpnoer zxcvbjm,./"
+home = 64
+same_finger = 1.7
+vim = ["k", "p", "u"]
+words = [
+  "supplier", "put", "push", "keep", "support", "poppy", "people", "update", "useful",
+  "perhaps", "public", "peak", "happen", "purpose", "output", "lookup", "backup",
+  "skip", "pick", "production", "jump", "appear", "product", "happy", "populate",
+  "multiple", "you", "use", "run", "out", "but", "suppose", "capture", "publish",
+  "per", "setup", "quick", "apple", "keeper", "kick", "supplier's", "plus", "your",
+  "work", "take", "step", "plan", "make", "look", "like", "just", "back", "supposed",
+  "skipping", "user", "page", "approach", "pushing", "sure", "key", "know", "yep",
+  "our", "property", "ask", "dump", "kind", "usually", "curious", "link", "open",
+  "couple", "stuck", "group", "would", "think", "could", "check", "build", "about"
+]
+
+[[stage]]
+name = "G and M settle"
+blurb = "G and M settle on the inner columns."
+keys = "qw;dgyhauk ilstmpnoer zxcvbjf,./"
+home = 65
+same_finger = 1.4
+vim = ["f", "gg", "m"]
+words = [
+  "off", "from", "gem", "might", "commit", "going", "minimum", "gig", "management",
+  "toggle", "staging", "something", "command", "different", "stuff", "moment", "game",
+  "making", "may", "get", "for", "message", "i'm", "mortgage", "missing", "fix",
+  "getting", "logging", "sometimes", "meeting", "summary", "morning", "git", "time",
+  "them", "some", "same", "name", "move", "more", "make", "main", "file", "staff",
+  "merge", "information", "few", "page", "remember", "most", "ref", "image", "moving",
+  "memory", "good", "agreement", "fish", "find", "myself", "fly", "thing", "right",
+  "first", "agent", "again", "after", "seem", "home", "format", "family", "maybe",
+  "made", "fine", "feel", "come", "font", "free", "manage", "number", "change"
+]
+
+[[stage]]
+name = "Y and B settle"
+blurb = "Y and B settle on the top row."
+keys = "qwydgbhauk ilstmpnoer zxcv;jf,./"
+home = 65
+same_finger = 1.2
+vim = ["b", "yy", ";"]
+words = [
+  "probably", "maybe", "you", "yes", "way", "try", "may", "day", "but", "any", "buy",
+  "why", "yet", "your", "yeah", "very", "they", "only", "both", "been", "back", "key",
+  "yep", "keyboard", "ruby", "blinky", "library", "fly", "bit", "build", "board",
+  "about", "able", "ability", "every", "say", "job", "days", "copy", "number",
+  "deploy", "before", "possibly", "table", "really", "anyway", "company", "because",
+  "already", "query", "always", "public", "web", "pay", "away", "today", "better",
+  "year", "sync", "grab", "actually", "butterfly", "brew", "bin", "possible", "being",
+  "pretty", "built", "type", "many", "big", "bad", "ready", "anything", "between",
+  "best", "yesterday", "anyone", "browser", "slab"
+]
+
+[[stage]]
+name = "Fully Very Normal"
+blurb = "The last keys land. You're on the Very Normal layout."
+keys = "qwydgbhauj ilstmpnoer zxcvk;f,./"
+home = 65
+same_finger = 1.0
+vim = ["j", "k", ";"]
+words = [
+  "kick", "work", "take", "make", "look", "like", "just", "back", "key", "know",
+  "keep", "ask", "kind", "link", "think", "check", "job", "week", "token", "slack",
+  "project", "peak", "bookmark", "hook", "works", "track", "links", "talk", "skip",
+  "pick", "kids", "jump", "task", "skill", "making", "break", "locked", "likely",
+  "working", "jar", "looking", "quick", "thanks", "keeper", "keen", "book", "worked",
+  "stick", "blank", "kinesis", "lock", "join", "broken", "thinking", "dinky", "block",
+  "keyboard", "took", "folk", "backstage", "markdown", "blinky", "journal", "backfill",
+  "taken", "stuck", "flake", "click", "week's", "lookup", "backup", "thank", "quickly",
+  "spoken", "picked", "marked", "weekend", "keeping"
+]

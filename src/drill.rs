@@ -5,7 +5,6 @@ use std::time::{Duration, Instant};
 
 use crate::layout;
 use crate::store::{LetterStat, Progress};
-use crate::words;
 
 /// How long a pause before the next key lights up on the map.
 pub const HINT_AFTER: Duration = Duration::from_millis(1200);
@@ -129,12 +128,24 @@ impl Default for Rng {
     }
 }
 
+/// The stage's own word list, or common words that use its moved keys.
 fn stage_words(stage: usize) -> Vec<String> {
-    let w = words::get();
-    if stage == 0 {
-        w.common.iter().take(200).cloned().collect()
+    let own = layout::words(stage);
+    if stage > 0 && !own.is_empty() {
+        return own.to_vec();
+    }
+    let focus = layout::focus(stage);
+    let common = layout::common_words();
+    let picked: Vec<String> = common
+        .iter()
+        .filter(|w| w.chars().any(|c| focus.contains(&c)))
+        .take(80)
+        .cloned()
+        .collect();
+    if picked.len() >= 10 {
+        picked
     } else {
-        w.stages[stage].clone()
+        common.iter().take(200).cloned().collect()
     }
 }
 
@@ -172,7 +183,7 @@ fn weighted_char(stage: usize, progress: &Progress, rng: &mut Rng) -> char {
 }
 
 pub fn build(mode: Mode, stage: usize, progress: &Progress, rng: &mut Rng) -> String {
-    let common = &words::get().common;
+    let common = layout::common_words();
     match mode {
         Mode::Recall => {
             let several = layout::focus(stage).len() > 1;
@@ -440,7 +451,7 @@ mod tests {
     #[test]
     fn every_mode_builds_text() {
         let mut rng = Rng::seeded(7);
-        for stage in 0..=layout::LAST {
+        for stage in 0..=layout::last() {
             for mode in Mode::ALL {
                 assert!(!build(mode, stage, &Progress::default(), &mut rng).is_empty());
             }

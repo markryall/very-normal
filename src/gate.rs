@@ -125,7 +125,7 @@ pub fn items(progress: &Progress, stage: usize) -> Vec<Item> {
         Item {
             label: format!(
                 "Used {} in real editing without fumbling",
-                layout::VIM[stage].join(" ")
+                layout::vim(stage).join(" ")
             ),
             ok: manual.vim,
             detail: String::new(),

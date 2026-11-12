@@ -6,7 +6,6 @@ pub mod layout;
 pub mod oryx;
 pub mod report;
 pub mod store;
-pub mod words;
 
 /// Opens a URL with `$VERY_NORMAL_OPEN` (a command, `{url}` marks where the
 /// address goes), or with macOS `open`.

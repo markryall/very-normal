@@ -10,11 +10,12 @@ use serde_json::Value;
 
 use crate::layout;
 
-pub const DEFAULT_LAYOUT: &str = "Xx6pM";
-
-/// `$VERY_NORMAL_LAYOUT`, or Mark's voyager-very-normal layout.
+/// `$VERY_NORMAL_LAYOUT`, or the plan's `oryx_layout`; empty if neither is set.
 pub fn layout_id() -> String {
-    std::env::var("VERY_NORMAL_LAYOUT").unwrap_or_else(|_| DEFAULT_LAYOUT.to_string())
+    std::env::var("VERY_NORMAL_LAYOUT")
+        .ok()
+        .or_else(|| layout::plan().oryx_layout.clone())
+        .unwrap_or_default()
 }
 
 pub fn edit_url(layout: &str) -> String {
@@ -30,14 +31,21 @@ const SLOTS: [usize; 30] = [
     13, 14, 15, 16, 17, 38, 39, 40, 41, 42,
 ];
 
-const HOLDS: [(usize, &str); 6] = [
-    (11, "LEFT_CTRL"),
-    (12, "LEFT_ALT"),
-    (13, "LEFT_GUI"),
-    (16, "RIGHT_GUI"),
-    (17, "RIGHT_ALT"),
-    (18, "RIGHT_CTRL"),
-];
+/// The Oryx hold codes the plan's home row mods should have.
+fn expected_holds() -> Vec<(usize, String)> {
+    (10..20)
+        .filter_map(|i| {
+            let side = if i % 10 < 5 { "LEFT" } else { "RIGHT" };
+            let code = match layout::modifier(i)? {
+                "ctrl" => "CTRL",
+                "alt" => "ALT",
+                "cmd" => "GUI",
+                _ => "SHIFT",
+            };
+            Some((i, format!("{side}_{code}")))
+        })
+        .collect()
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Snapshot {
@@ -62,7 +70,7 @@ pub enum Finding {
     Hold {
         index: usize,
         got: String,
-        want: &'static str,
+        want: String,
     },
     Mirror {
         index: usize,
@@ -76,18 +84,18 @@ impl std::fmt::Display for Finding {
         match self {
             Finding::Key { index, got, want } => write!(
                 f,
-                "main layer: the key where QWERTY has {} types {got}, should type {want}",
+                "main layer: the key that started as {} types {got}, should type {want}",
                 layout::keys(0)[*index]
             ),
             Finding::Hold { index, got, want } => write!(
                 f,
-                "home row mod: the key where QWERTY has {} holds {}, should hold {want}",
+                "home row mod: the key that started as {} holds {}, should hold {want}",
                 layout::keys(0)[*index],
                 if got.is_empty() { "nothing" } else { got }
             ),
             Finding::Mirror { index, got, want } => write!(
                 f,
-                "mirror layer: the left key where QWERTY has {} types {got}, should type {want}",
+                "mirror layer: the left key that started as {} types {got}, should type {want}",
                 layout::keys(0)[*index]
             ),
         }
@@ -95,6 +103,9 @@ impl std::fmt::Display for Finding {
 }
 
 pub fn fetch(layout: &str) -> Result<Snapshot> {
+    if layout.is_empty() {
+        bail!("no Oryx layout: set oryx_layout in your plan, or $VERY_NORMAL_LAYOUT");
+    }
     let query = format!(
         "query {{ layout(hashId: \"{layout}\", geometry: \"voyager\", revisionId: \"latest\") \
          {{ title revision {{ hashId createdAt layers {{ title position keys }} }} }} }}"
@@ -192,7 +203,7 @@ pub fn parse(v: &Value) -> Result<Snapshot> {
         revision: text("/revision/hashId"),
         created: text("/revision/createdAt"),
         main: SLOTS.iter().map(|s| character(&main[*s])).collect(),
-        holds: HOLDS
+        holds: expected_holds()
             .iter()
             .map(|(i, _)| (*i, code(&main[SLOTS[*i]], "hold")))
             .collect(),
@@ -221,8 +232,8 @@ impl Snapshot {
                 want: want[index],
             })
             .collect();
-        for ((index, got), (_, want)) in self.holds.iter().zip(HOLDS) {
-            if got != want {
+        for ((index, got), (_, want)) in self.holds.iter().zip(expected_holds()) {
+            if *got != want {
                 out.push(Finding::Hold {
                     index: *index,
                     got: got.clone(),
