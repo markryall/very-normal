@@ -299,6 +299,7 @@ mod tests {
             wpm: 15.0,
             acc,
             secs: minutes * 60.0,
+            ..Run::default()
         }
     }
 

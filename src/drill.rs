@@ -252,6 +252,8 @@ pub struct Drill {
     last_progress: Instant,
     finished_at: Option<Instant>,
     log: BTreeMap<String, LetterStat>,
+    pairs: BTreeMap<String, LetterStat>,
+    typos: BTreeMap<String, u64>,
 }
 
 impl Drill {
@@ -270,6 +272,8 @@ impl Drill {
             last_progress: now,
             finished_at: None,
             log: BTreeMap::new(),
+            pairs: BTreeMap::new(),
+            typos: BTreeMap::new(),
         }
     }
 
@@ -299,12 +303,25 @@ impl Drill {
             self.last_key = Some(now);
         }
         self.keys += 1;
+        // the key before, when both are letters or symbols: a pair to time
+        let pair = self
+            .pos
+            .checked_sub(1)
+            .map(|i| self.text[i])
+            .filter(|p| *p != ' ' && want != ' ')
+            .map(|p| format!("{p}{want}"));
         let stat = self.log.entry(want.to_string()).or_default();
         if c == want {
             if want != ' ' && self.pos > 0 {
                 let gap = now - self.last_key.unwrap_or(now);
+                let ms = gap.min(Duration::from_secs(3)).as_secs_f64() * 1000.0;
                 stat.n += 1;
-                stat.ms += gap.min(Duration::from_secs(3)).as_secs_f64() * 1000.0;
+                stat.ms += ms;
+                if let Some(pair) = pair {
+                    let p = self.pairs.entry(pair).or_default();
+                    p.n += 1;
+                    p.ms += ms;
+                }
             }
             self.pos += 1;
             self.last_key = Some(now);
@@ -317,6 +334,10 @@ impl Drill {
             self.misses += 1;
             stat.miss += 1;
             self.error = true;
+            *self.typos.entry(format!("{want}>{c}")).or_default() += 1;
+            if let Some(pair) = pair {
+                self.pairs.entry(pair).or_default().miss += 1;
+            }
         }
     }
 
@@ -368,6 +389,16 @@ impl Drill {
         &self.log
     }
 
+    /// Timings for each pair of keys typed one after the other.
+    pub fn pairs(&self) -> &BTreeMap<String, LetterStat> {
+        &self.pairs
+    }
+
+    /// Wrong keys, as "wanted>typed".
+    pub fn typos(&self) -> &BTreeMap<String, u64> {
+        &self.typos
+    }
+
     /// The slowest keys of this drill, for the recall summary.
     pub fn slowest(&self, n: usize) -> Vec<(char, f64, u64)> {
         let mut v: Vec<(char, f64, u64)> = self
@@ -405,6 +436,21 @@ mod tests {
         assert!((d.accuracy() - 66.666).abs() < 0.01);
         assert_eq!(d.letters()["b"].ms, 300.0);
         assert_eq!(d.letters()["a"].miss, 1);
+        assert_eq!(d.typos()["a>x"], 1);
+    }
+
+    #[test]
+    fn pairs_time_the_second_key_and_skip_spaces() {
+        let t0 = Instant::now();
+        let mut d = Drill::new(Mode::Words, 1, "th e".into(), t0);
+        d.press('t', at(t0, 0));
+        d.press('y', at(t0, 50));
+        d.press('h', at(t0, 200));
+        d.press(' ', at(t0, 300));
+        d.press('e', at(t0, 450));
+        assert_eq!(d.pairs().len(), 1);
+        let th = d.pairs()["th"];
+        assert_eq!((th.n, th.miss, th.ms), (1, 1, 200.0));
     }
 
     #[test]

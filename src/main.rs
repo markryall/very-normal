@@ -7,7 +7,7 @@ use ratatui::crossterm::event::{self, Event, KeyEventKind};
 use very_normal::app::App;
 use very_normal::layout;
 use very_normal::store::{self, Progress};
-use very_normal::{coach, keymap, oryx, report};
+use very_normal::{charts, coach, keymap, oryx, report};
 
 const HELP: &str = "\
 very-normal: walk a ZSA Voyager from QWERTY to the Very Normal layout
@@ -23,6 +23,8 @@ usage: very-normal                  the trainer (TUI)
        very-normal keymap kanata|karabiner [stage] [--all-keyboards]
                                     a software keymap for keyboards without Oryx
                                     (karabiner: built-in keyboard only, unless --all-keyboards)
+       very-normal charts [file] [--no-open]
+                                    write your progress as a page of charts and open it
        very-normal export           print your progress as JSON
        very-normal --help | --version
 
@@ -96,10 +98,7 @@ fn main() -> Result<()> {
         }
         ["status"] => {
             let p = Progress::load(&path)?;
-            let now = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)?
-                .as_millis() as u64;
-            let a = coach::assess(&p.runs, now);
+            let a = coach::assess(&p.runs, now_ms()?);
             println!("{}", a.message);
             println!(
                 "today {:.0}/{:.0} min · {}-day streak · practising stage {}",
@@ -143,6 +142,24 @@ fn main() -> Result<()> {
                 other => bail!("no {other} keymap; try kanata or karabiner"),
             }
         }
+        ["charts", rest @ ..] => {
+            let open = !rest.contains(&"--no-open");
+            let out = match rest
+                .iter()
+                .filter(|a| **a != "--no-open")
+                .collect::<Vec<_>>()[..]
+            {
+                [] => charts::default_path(&path),
+                [f] => std::path::PathBuf::from(f),
+                _ => bail!("usage: very-normal charts [file] [--no-open]"),
+            };
+            let p = Progress::load(&path)?;
+            charts::write(&p, &out, now_ms()?)?;
+            println!("Charts written to {}", out.display());
+            if open {
+                very_normal::open_url(&out.display().to_string())?;
+            }
+        }
         ["export"] => println!("{}", serde_json::to_string_pretty(&Progress::load(&path)?)?),
         _ => {
             eprint!("{HELP}");
@@ -150,6 +167,12 @@ fn main() -> Result<()> {
         }
     }
     Ok(())
+}
+
+fn now_ms() -> Result<u64> {
+    Ok(std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)?
+        .as_millis() as u64)
 }
 
 /// Runs the TUI until it quits, redrawing often so timers and hints move.

@@ -19,12 +19,16 @@ pub struct Progress {
     /// Stage number, then the character, both as strings.
     #[serde(default)]
     pub letters: BTreeMap<String, BTreeMap<String, LetterStat>>,
+    /// Stage number, then two characters typed one after the other: how long
+    /// the second took after the first, and how often it was missed there.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub pairs: BTreeMap<String, BTreeMap<String, LetterStat>>,
     /// The local date of the last warm-up, as YYYY-MM-DD.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub warmed_up: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct Run {
     /// Milliseconds since the Unix epoch.
     pub t: u64,
@@ -35,6 +39,13 @@ pub struct Run {
     /// How long the drill took; missing from older runs and web tutor backups.
     #[serde(default)]
     pub secs: f64,
+    /// This run's timings and misses by character, so a key's speed can be
+    /// followed over time. Missing from older runs.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub letters: BTreeMap<String, LetterStat>,
+    /// Wrong keys, as "wanted>typed", with how often.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub typos: BTreeMap<String, u64>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -142,10 +153,22 @@ impl Progress {
         Some(last.iter().map(|r| r.wpm).sum::<f64>() / last.len() as f64)
     }
 
-    pub fn record(&mut self, run: Run, letters: &BTreeMap<String, LetterStat>) {
+    pub fn pairs(&self, stage: usize) -> BTreeMap<String, LetterStat> {
+        self.pairs
+            .get(&stage.to_string())
+            .cloned()
+            .unwrap_or_default()
+    }
+
+    /// Saves a run, adding its letters (and the drill's pairs) to the stage's totals.
+    pub fn record(&mut self, run: Run, pairs: &BTreeMap<String, LetterStat>) {
         let stage = self.letters.entry(run.stage.to_string()).or_default();
-        for (ch, stat) in letters {
+        for (ch, stat) in &run.letters {
             stage.entry(ch.clone()).or_default().add(stat);
+        }
+        let stage = self.pairs.entry(run.stage.to_string()).or_default();
+        for (pair, stat) in pairs {
+            stage.entry(pair.clone()).or_default().add(stat);
         }
         self.runs.push(run);
         if self.runs.len() > 2000 {
@@ -181,6 +204,9 @@ impl Progress {
         }
         for (stage, letters) in other.letters {
             self.letters.entry(stage).or_insert(letters);
+        }
+        for (stage, pairs) in other.pairs {
+            self.pairs.entry(stage).or_insert(pairs);
         }
         self.stage = self.stage.max(other.stage);
         self.runs.len() - before
@@ -223,6 +249,26 @@ mod tests {
         let once = p.clone();
         assert_eq!(p.merge(Progress::parse(BACKUP).unwrap()), 0);
         assert_eq!(p, once);
+    }
+
+    #[test]
+    fn recording_a_run_adds_its_letters_and_pairs_to_the_stage() {
+        let mut p = Progress::default();
+        let stat = |n, miss, ms| LetterStat { n, miss, ms };
+        let run = Run {
+            stage: 2,
+            letters: BTreeMap::from([("e".to_string(), stat(2, 1, 600.0))]),
+            typos: BTreeMap::from([("e>r".to_string(), 1)]),
+            ..Run::default()
+        };
+        let pairs = BTreeMap::from([("th".to_string(), stat(1, 0, 250.0))]);
+        p.record(run.clone(), &pairs);
+        p.record(run, &pairs);
+        assert_eq!(p.letters(2)["e"], stat(4, 2, 1200.0));
+        assert_eq!(p.pairs(2)["th"], stat(2, 0, 500.0));
+        assert_eq!(p.runs[0].typos["e>r"], 1);
+        let text = serde_json::to_string(&p).unwrap();
+        assert_eq!(Progress::parse(&text).unwrap(), p);
     }
 
     #[test]

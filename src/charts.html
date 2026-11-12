@@ -1,0 +1,766 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>very-normal charts</title>
+<style>
+:root {
+  color-scheme: light;
+  --page: #f9f9f7;
+  --surface: #fcfcfb;
+  --surface-2: #f0efec;
+  --ink: #0b0b0b;
+  --ink-2: #52514e;
+  --muted: #898781;
+  --grid: #e1e0d9;
+  --axis: #c3c2b7;
+  --border: rgba(11, 11, 11, 0.10);
+  --band: rgba(11, 11, 11, 0.035);
+  --s1: #2a78d6;
+  --s2: #eb6834;
+  --up: #2a78d6;
+  --down: #e34948;
+  --good: #006300;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --page: #0d0d0d;
+    --surface: #1a1a19;
+    --surface-2: #262624;
+    --ink: #f0efec;
+    --ink-2: #c3c2b7;
+    --muted: #898781;
+    --grid: #2c2c2a;
+    --axis: #383835;
+    --border: rgba(255, 255, 255, 0.10);
+    --band: rgba(255, 255, 255, 0.04);
+    --s1: #3987e5;
+    --s2: #d95926;
+    --up: #3987e5;
+    --down: #e66767;
+    --good: #0ca30c;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --page: #0d0d0d;
+  --surface: #1a1a19;
+  --surface-2: #262624;
+  --ink: #f0efec;
+  --ink-2: #c3c2b7;
+  --muted: #898781;
+  --grid: #2c2c2a;
+  --axis: #383835;
+  --border: rgba(255, 255, 255, 0.10);
+  --band: rgba(255, 255, 255, 0.04);
+  --s1: #3987e5;
+  --s2: #d95926;
+  --up: #3987e5;
+  --down: #e66767;
+  --good: #0ca30c;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--page);
+  color: var(--ink);
+  font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+main { max-width: 1120px; margin: 0 auto; padding: 24px 16px 64px; }
+header h1 { font-size: 22px; margin: 0 0 2px; letter-spacing: -0.01em; }
+header p { margin: 0; color: var(--ink-2); }
+h2 { font-size: 17px; margin: 36px 0 4px; }
+h2 + .lede { margin: 0 0 12px; color: var(--ink-2); }
+h3 { font-size: 14px; margin: 0; }
+.sub { color: var(--ink-2); font-size: 13px; margin: 2px 0 10px; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin: 20px 0 0; }
+.tile, .card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; }
+.tile { padding: 12px 14px; }
+.tile .label { color: var(--ink-2); font-size: 12px; }
+.tile .value { font-size: 26px; font-weight: 600; letter-spacing: -0.02em; }
+.tile .note { color: var(--muted); font-size: 12px; }
+.card { padding: 16px; min-width: 0; }
+.grid2 { display: grid; gap: 12px; grid-template-columns: 1fr; }
+@media (min-width: 820px) { .grid2 { grid-template-columns: 1fr 1fr; } }
+.stack { display: grid; gap: 12px; }
+.filters {
+  position: sticky; top: 0; z-index: 5;
+  display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center;
+  margin: 20px -16px 0; padding: 10px 16px;
+  background: color-mix(in oklab, var(--page) 88%, transparent);
+  backdrop-filter: blur(8px);
+  border-bottom: 1px solid var(--border);
+}
+.filters .group { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.filters .name { color: var(--ink-2); font-size: 12px; margin-right: 2px; }
+.chip {
+  font: inherit; font-size: 13px; color: var(--ink); cursor: pointer;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 999px; padding: 3px 11px;
+}
+.chip:hover { background: var(--surface-2); }
+.chip[aria-pressed="true"] { background: var(--ink); color: var(--surface); border-color: var(--ink); }
+select.chip { padding-right: 6px; }
+svg { display: block; overflow: visible; }
+svg text { fill: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+svg .grid { stroke: var(--grid); stroke-width: 1; }
+svg .axis { stroke: var(--axis); stroke-width: 1; }
+svg .ref { stroke: var(--ink-2); stroke-width: 1; stroke-opacity: 0.6; }
+svg .reflabel { fill: var(--ink-2); }
+svg .bandlabel { fill: var(--muted); font-size: 10px; }
+svg .direct { fill: var(--ink); font-weight: 600; }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 14px; color: var(--ink-2); font-size: 12px; margin: 0 0 8px; }
+.legend span::before {
+  content: ""; display: inline-block; width: 10px; height: 10px; border-radius: 3px;
+  background: var(--c); margin-right: 6px; vertical-align: -1px;
+}
+.legend .line::before { height: 2px; border-radius: 1px; vertical-align: 3px; width: 14px; }
+.empty { color: var(--muted); padding: 18px 0; }
+.bars { display: grid; grid-template-columns: max-content 1fr max-content; gap: 6px 10px; align-items: center; }
+.bars .lab { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.bars .lab small { color: var(--muted); margin-left: 6px; }
+.bars .track { height: 14px; }
+.bars .bar { height: 14px; border-radius: 0 4px 4px 0; background: var(--c, var(--s1)); min-width: 2px; }
+.bars .val { color: var(--ink-2); font-variant-numeric: tabular-nums; text-align: right; }
+.tag { font-size: 11px; color: var(--ink-2); border: 1px solid var(--border); border-radius: 999px; padding: 0 6px; margin-left: 6px; }
+.kb { display: grid; grid-template-columns: repeat(5, 1fr) 14px repeat(5, 1fr); gap: 4px; }
+.kb .key {
+  aspect-ratio: 1.05; border-radius: 7px; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  border: 1px solid var(--border); background: var(--heat, var(--surface-2)); min-width: 0;
+}
+.kb .key b { font-size: 18px; line-height: 1; color: var(--kc, var(--ink)); }
+.kb .key span { font-size: 10px; color: var(--kc2, var(--ink-2)); font-variant-numeric: tabular-nums; margin-top: 3px; }
+.kb .key.focus { box-shadow: inset 0 0 0 2px var(--ink); }
+.kb .gap { visibility: hidden; }
+.scale { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 11px; margin-top: 10px; flex-wrap: wrap; }
+.scale .ramp { display: flex; gap: 2px; }
+.scale .ramp i { width: 18px; height: 10px; border-radius: 2px; background: var(--heat); }
+.sparks { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+.spark { border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; }
+.spark .top { display: flex; justify-content: space-between; align-items: baseline; gap: 6px; }
+.spark b { font-size: 18px; }
+.spark .delta { font-size: 12px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.spark .delta.better { color: var(--good); }
+.panels { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
+.cal { display: grid; grid-auto-flow: column; grid-template-rows: repeat(7, 14px); grid-auto-columns: 14px; justify-content: start; gap: 3px; overflow-x: auto; padding-bottom: 4px; }
+.cal i { width: 14px; height: 14px; border-radius: 3px; background: var(--heat, var(--surface-2)); }
+.cal i.goal { box-shadow: inset 0 0 0 1.5px var(--ink); }
+.cal i.blank { visibility: hidden; }
+#tip {
+  position: fixed; pointer-events: none; z-index: 10; display: none; max-width: 280px;
+  background: var(--ink); color: var(--surface); padding: 6px 9px; border-radius: 6px;
+  font-size: 12px; white-space: pre-line; box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+}
+details { margin-top: 36px; }
+summary { cursor: pointer; color: var(--ink-2); }
+table { border-collapse: collapse; width: 100%; margin-top: 10px; font-variant-numeric: tabular-nums; font-size: 13px; }
+th, td { text-align: left; padding: 4px 8px; border-bottom: 1px solid var(--grid); }
+th { color: var(--ink-2); font-weight: 500; }
+.tablewrap { overflow-x: auto; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Your typing, charted</h1>
+    <p id="meta"></p>
+  </header>
+  <section class="tiles" id="tiles"></section>
+
+  <nav class="filters" aria-label="Filters">
+    <div class="group" id="modes"><span class="name">Drill</span></div>
+    <div class="group"><span class="name">Stage for keys</span><select class="chip" id="stage"></select></div>
+  </nav>
+
+  <h2>Speed</h2>
+  <p class="lede">Every run of the chosen drill, in order. Shaded bands are stages.</p>
+  <div class="stack">
+    <div class="card"><h3>Words per minute</h3><p class="sub" id="speed-sub"></p><div id="speed"></div></div>
+    <div class="card"><h3>Accuracy</h3><p class="sub" id="acc-sub"></p><div id="acc"></div></div>
+  </div>
+
+  <h2>Within each stage</h2>
+  <p class="lede">How fast you climb once the keys move. The trend line is a straight fit through the runs.</p>
+  <div class="panels" id="within"></div>
+
+  <h2>Across stages</h2>
+  <p class="lede">Where each stage started and where it got to, against your QWERTY baseline.</p>
+  <div class="grid2">
+    <div class="card"><h3>Start vs latest</h3><p class="sub">Average of the first three and the latest three runs</p><div id="across"></div></div>
+    <div class="card"><h3>Time spent per stage</h3><p class="sub">Minutes of practice, every drill</p><div id="stagetime"></div></div>
+  </div>
+
+  <h2>Keys <span id="keys-stage" style="font-weight:400;color:var(--ink-2)"></span></h2>
+  <p class="lede">Which keys are slow and which get missed. Outlined keys are the ones this stage moved.</p>
+  <div class="stack">
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:baseline">
+        <h3>The board</h3>
+        <div class="group" id="heatmode" style="display:flex;gap:6px"></div>
+      </div>
+      <p class="sub" id="kb-sub"></p>
+      <div id="kb"></div>
+    </div>
+    <div class="grid2">
+      <div class="card"><h3>Slowest keys</h3><p class="sub">Average time to reach the key after the one before</p><div id="slow"></div></div>
+      <div class="card"><h3>Most missed keys</h3><p class="sub">Wrong presses per 100 times the key was wanted</p><div id="missed"></div></div>
+    </div>
+    <div class="card"><h3>Each key over time</h3><p class="sub">Average time per key, run by run. Lower is faster.</p><div id="sparks"></div></div>
+    <div class="grid2">
+      <div class="card"><h3>What you typed instead</h3><p class="sub">Wanted → typed. Tagged when your finger went to where the key used to be.</p><div id="typos"></div></div>
+      <div class="card"><h3>Slowest pairs</h3><p class="sub">The second key's time after the first, at least 3 times each</p><div id="pairs"></div></div>
+    </div>
+  </div>
+
+  <h2>Habits</h2>
+  <p class="lede">When and how long you practise, and how that shows up in your speed.</p>
+  <div class="stack">
+    <div class="card"><h3>Practice calendar</h3><p class="sub" id="cal-sub"></p><div id="cal"></div><div id="cal-scale"></div></div>
+    <div class="grid2">
+      <div class="card"><h3>Speed through a session</h3><p class="sub">Speed against your usual for that stage and drill, by run within a session</p><div id="fatigue"></div></div>
+      <div class="card"><h3>Speed by time of day</h3><p class="sub">Speed against your usual for that stage and drill, by hour</p><div id="hours"></div></div>
+    </div>
+  </div>
+
+  <details>
+    <summary>Every run as a table</summary>
+    <div class="tablewrap"><table id="table"></table></div>
+  </details>
+</main>
+<div id="tip" role="tooltip"></div>
+
+<script>
+const D = "__VERY_NORMAL_DATA__";
+const P = D.progress;
+const STAGES = D.stages;
+const MODE_LABELS = {
+  recall: "key recall", words: "new keys", review: "review",
+  real: "real text", links: "markdown links", mirror: "mirror",
+};
+const MODE_ORDER = ["words", "real", "review", "recall", "links", "mirror"];
+
+// ---------- helpers ----------
+const NS = "http://www.w3.org/2000/svg";
+function s(tag, attrs = {}, kids = []) {
+  const e = document.createElementNS(NS, tag);
+  for (const [k, v] of Object.entries(attrs)) if (v != null) e.setAttribute(k, v);
+  for (const c of [].concat(kids)) if (c != null) e.append(c);
+  return e;
+}
+function h(tag, attrs = {}, kids = []) {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (v == null) continue;
+    if (k === "style" && typeof v === "object") Object.entries(v).forEach(([p, x]) => e.style.setProperty(p, x));
+    else e.setAttribute(k, v);
+  }
+  for (const c of [].concat(kids)) if (c != null) e.append(c);
+  return e;
+}
+const $ = id => document.getElementById(id);
+const pad = n => String(n).padStart(2, "0");
+const dayKey = t => { const d = new Date(t); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; };
+const fmtDate = t => new Date(t).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+const fmtMin = m => m >= 60 ? `${Math.floor(m / 60)}h ${Math.round(m % 60)}m` : `${Math.round(m)}m`;
+const mean = a => a.length ? a.reduce((x, y) => x + y, 0) / a.length : NaN;
+const median = a => { if (!a.length) return NaN; const b = [...a].sort((x, y) => x - y); const m = b.length >> 1; return b.length % 2 ? b[m] : (b[m - 1] + b[m]) / 2; };
+const secs = r => r.secs > 0 ? r.secs : 60;
+const show = c => c === " " ? "␣" : c;
+const stageLabel = i => `${i} · ${STAGES[i]?.name ?? ""}`;
+const pct = v => `${v > 0 ? "+" : v < 0 ? "−" : ""}${Math.abs(v * 100).toFixed(0)}%`;
+function empty(box, text) { box.replaceChildren(h("div", { class: "empty" }, text)); }
+function legend(items) {
+  return h("div", { class: "legend" }, items.map(i => h("span", { class: i.line ? "line" : null, style: { "--c": i.color } }, i.name)));
+}
+function niceTicks(lo, hi, n = 4) {
+  if (!isFinite(lo) || !isFinite(hi)) { lo = 0; hi = 1; }
+  if (hi - lo < 1e-9) { lo -= 1; hi += 1; }
+  const raw = (hi - lo) / n, mag = 10 ** Math.floor(Math.log10(raw));
+  const step = [1, 2, 2.5, 5, 10].map(m => m * mag).find(m => m >= raw);
+  const out = [];
+  for (let v = Math.floor(lo / step) * step; v <= Math.ceil(hi / step) * step + step / 2; v += step) out.push(+v.toFixed(10));
+  return out;
+}
+const lin = (d0, d1, r0, r1) => v => r0 + (v - d0) / ((d1 - d0) || 1) * (r1 - r0);
+function fit(points) {
+  const n = points.length;
+  if (n < 2) return null;
+  const mx = mean(points.map(p => p.x)), my = mean(points.map(p => p.y));
+  let num = 0, den = 0;
+  for (const p of points) { num += (p.x - mx) * (p.y - my); den += (p.x - mx) ** 2; }
+  const slope = den ? num / den : 0;
+  return { slope, at: x => my + slope * (x - mx) };
+}
+// heat colour: the hue mixed into the empty-cell grey, so it works in both themes
+const heat = (hue, t) => `color-mix(in oklab, var(${hue}) ${Math.round(12 + 80 * t)}%, var(--surface-2))`;
+
+// ---------- tooltip ----------
+const tip = $("tip");
+function placeTip(x, y, text) {
+  tip.textContent = text;
+  tip.style.display = "block";
+  const r = tip.getBoundingClientRect();
+  let left = x + 14, top = y + 14;
+  if (left + r.width > innerWidth - 8) left = x - r.width - 14;
+  if (top + r.height > innerHeight - 8) top = y - r.height - 14;
+  tip.style.left = `${Math.max(8, left)}px`;
+  tip.style.top = `${Math.max(8, top)}px`;
+}
+const hideTip = () => { tip.style.display = "none"; };
+document.addEventListener("pointermove", e => {
+  const t = e.target.closest?.("[data-tip]");
+  if (t) placeTip(e.clientX, e.clientY, t.getAttribute("data-tip"));
+  else if (!e.target.closest?.("[data-hover]")) hideTip();
+});
+
+// ---------- derived data ----------
+const runs = [...P.runs].sort((a, b) => a.t - b.t);
+{
+  let session = 0, pos = 0, prevEnd = null;
+  for (const r of runs) {
+    const start = r.t - secs(r) * 1000;
+    if (prevEnd == null || start - prevEnd > D.breakMinutes * 60000) { session++; pos = 0; }
+    r.session = session; r.pos = ++pos; prevEnd = r.t;
+  }
+  const groups = {};
+  for (const r of runs) (groups[`${r.stage}/${r.mode}`] ??= []).push(r.wpm);
+  for (const r of runs) {
+    const m = median(groups[`${r.stage}/${r.mode}`]);
+    r.rel = m > 0 ? r.wpm / m - 1 : 0;
+  }
+}
+const modes = MODE_ORDER.filter(m => runs.some(r => r.mode === m));
+const state = {
+  mode: modes.includes("words") ? "words" : modes[0],
+  stage: P.stage ?? 0,
+  heat: "ms",
+};
+const stagesWithData = STAGES.map((_, i) => i).filter(i =>
+  runs.some(r => r.stage === i) || Object.keys(P.letters?.[i] ?? {}).length);
+if (!stagesWithData.includes(state.stage) && stagesWithData.length) state.stage = stagesWithData.at(-1);
+
+// ---------- charts ----------
+function lineChart(box, { series, refs = [], bands = [], height = 230, yFmt = v => v, yMin, yMax, xName = "run" }) {
+  const W = Math.max(280, box.clientWidth), H = height;
+  const m = { l: 38, r: 54, t: bands.length ? 20 : 8, b: 24 };
+  const pts = series.flatMap(sr => sr.points);
+  if (!pts.length) return empty(box, "No runs of this drill yet.");
+  const xs = pts.map(p => p.x);
+  const x0 = Math.min(...xs), x1 = Math.max(...xs);
+  const yv = pts.map(p => p.y).concat(refs.map(r => r.y));
+  const ticks = niceTicks(yMin ?? Math.min(...yv), yMax ?? Math.max(...yv));
+  const y0 = ticks[0], y1 = ticks.at(-1);
+  const X = lin(x0, x1 === x0 ? x0 + 1 : x1, m.l, W - m.r), Y = lin(y0, y1, H - m.b, m.t);
+  const g = s("svg", { width: W, height: H, viewBox: `0 0 ${W} ${H}`, role: "img" });
+  bands.forEach((b, i) => {
+    const a = X(b.x0 - 0.5 < x0 ? x0 : b.x0 - 0.5), z = X(b.x1 + 0.5 > x1 ? x1 : b.x1 + 0.5);
+    if (i % 2 === 0) g.append(s("rect", { x: a, y: m.t, width: Math.max(0, z - a), height: H - m.b - m.t, fill: "var(--band)" }));
+    if (z - a > 18) g.append(s("text", { x: (a + z) / 2, y: m.t - 6, "text-anchor": "middle", class: "bandlabel" }, `S${b.label}`));
+  });
+  for (const t of ticks) {
+    g.append(s("line", { x1: m.l, x2: W - m.r, y1: Y(t), y2: Y(t), class: t === y0 ? "axis" : "grid" }));
+    g.append(s("text", { x: m.l - 6, y: Y(t) + 4, "text-anchor": "end" }, yFmt(t)));
+  }
+  const xt = niceTicks(x0, x1, Math.max(2, Math.floor(W / 90))).filter(t => t >= x0 && t <= x1 && Number.isInteger(t));
+  for (const t of xt) g.append(s("text", { x: X(t), y: H - 6, "text-anchor": "middle" }, t));
+  for (const r of refs) {
+    g.append(s("line", { x1: m.l, x2: W - m.r, y1: Y(r.y), y2: Y(r.y), class: "ref" }));
+    g.append(s("text", { x: W - m.r + 4, y: Y(r.y) + 4, class: "reflabel" }, r.label));
+  }
+  for (const sr of series) {
+    if (sr.points.length > 1) {
+      const d = sr.points.map((p, i) => `${i ? "L" : "M"}${X(p.x).toFixed(1)},${Y(p.y).toFixed(1)}`).join("");
+      g.append(s("path", { d, fill: "none", stroke: sr.color, "stroke-width": 2, "stroke-linejoin": "round", "stroke-linecap": "round", "stroke-opacity": sr.faint ? 0.45 : 1 }));
+    }
+    if (sr.dots && sr.points.length <= 80)
+      for (const p of sr.points) g.append(s("circle", { cx: X(p.x), cy: Y(p.y), r: 4, fill: sr.color, stroke: "var(--surface)", "stroke-width": 2 }));
+  }
+  const last = series.at(-1).points.at(-1);
+  if (last) {
+    // step clear of a reference line's label at the same height
+    const clash = refs.some(r => Math.abs(Y(r.y) - Y(last.y)) < 12);
+    const ly = clash ? Y(last.y) + (refs.some(r => Y(r.y) > Y(last.y)) ? -10 : 16) : Y(last.y) + 4;
+    g.append(s("text", { x: X(last.x) + 8, y: ly, class: "direct" }, yFmt(last.y)));
+  }
+  // crosshair: nearest run to the pointer
+  const cross = s("line", { y1: m.t, y2: H - m.b, class: "axis", visibility: "hidden" });
+  const ring = s("circle", { r: 5, fill: series[0].color, stroke: "var(--surface)", "stroke-width": 2, visibility: "hidden" });
+  g.append(cross, ring);
+  const hit = s("rect", { x: m.l, y: 0, width: W - m.l - m.r, height: H, fill: "transparent", "data-hover": "" });
+  g.append(hit);
+  const main = series[0].points;
+  hit.addEventListener("pointermove", e => {
+    const bx = g.getBoundingClientRect();
+    const px = (e.clientX - bx.left) * (W / bx.width);
+    let best = main[0];
+    for (const p of main) if (Math.abs(X(p.x) - px) < Math.abs(X(best.x) - px)) best = p;
+    cross.setAttribute("x1", X(best.x)); cross.setAttribute("x2", X(best.x)); cross.setAttribute("visibility", "visible");
+    ring.setAttribute("cx", X(best.x)); ring.setAttribute("cy", Y(best.y)); ring.setAttribute("visibility", "visible");
+    const lines = [best.tip ?? `${xName} ${best.x}`];
+    for (const sr of series) {
+      const p = sr.points.find(q => q.x === best.x);
+      if (p) lines.push(`${sr.name}: ${yFmt(p.y)}`);
+    }
+    placeTip(e.clientX, e.clientY, lines.join("\n"));
+  });
+  hit.addEventListener("pointerleave", () => { cross.setAttribute("visibility", "hidden"); ring.setAttribute("visibility", "hidden"); hideTip(); });
+  const kids = [];
+  if (series.length > 1) kids.push(legend(series.map(sr => ({ name: sr.name, color: sr.color, line: true }))));
+  kids.push(g);
+  box.replaceChildren(...kids);
+}
+
+function columns(box, { cats, series, refs = [], height = 220, fmt = v => v, signed = false, zeroBased = true }) {
+  const W = Math.max(280, box.clientWidth), H = height;
+  const m = { l: 40, r: refs.length ? 70 : 10, t: 12, b: 26 };
+  const vals = series.flatMap(sr => sr.values).filter(v => v != null);
+  if (!vals.length) return empty(box, "Not enough runs yet.");
+  const lo = Math.min(zeroBased ? 0 : Infinity, ...vals, ...refs.map(r => r.y));
+  const hi = Math.max(zeroBased ? 0 : -Infinity, ...vals, ...refs.map(r => r.y));
+  const ticks = niceTicks(lo, hi);
+  const Y = lin(ticks[0], ticks.at(-1), H - m.b, m.t);
+  const g = s("svg", { width: W, height: H, viewBox: `0 0 ${W} ${H}` });
+  for (const t of ticks) {
+    g.append(s("line", { x1: m.l, x2: W - m.r, y1: Y(t), y2: Y(t), class: t === 0 ? "axis" : "grid" }));
+    g.append(s("text", { x: m.l - 6, y: Y(t) + 4, "text-anchor": "end" }, fmt(t)));
+  }
+  const band = (W - m.l - m.r) / cats.length;
+  const bw = Math.min(24, (band * 0.7 - 2 * (series.length - 1)) / series.length);
+  const every = Math.ceil(cats.length / Math.max(1, Math.floor((W - m.l - m.r) / 34)));
+  cats.forEach((c, i) => {
+    const cx = m.l + band * (i + 0.5);
+    const total = bw * series.length + 2 * (series.length - 1);
+    series.forEach((sr, j) => {
+      const v = sr.values[i];
+      if (v == null) return;
+      const x = cx - total / 2 + j * (bw + 2);
+      const ya = Y(0 < ticks[0] ? ticks[0] : 0), yb = Y(v);
+      const top = Math.min(ya, yb), hgt = Math.max(1, Math.abs(ya - yb));
+      const color = signed ? (v >= 0 ? "var(--up)" : "var(--down)") : sr.color;
+      // rounded data end, square at the baseline
+      const r = Math.min(4, hgt, bw / 2);
+      const d = v >= 0
+        ? `M${x},${top + hgt}V${top + r}Q${x},${top} ${x + r},${top}H${x + bw - r}Q${x + bw},${top} ${x + bw},${top + r}V${top + hgt}Z`
+        : `M${x},${top}V${top + hgt - r}Q${x},${top + hgt} ${x + r},${top + hgt}H${x + bw - r}Q${x + bw},${top + hgt} ${x + bw},${top + hgt - r}V${top}Z`;
+      g.append(s("path", { d, fill: color }));
+      g.append(s("rect", { x: x - 2, y: m.t, width: bw + 4, height: H - m.b - m.t, fill: "transparent", "data-tip": sr.tips?.[i] ?? `${c.label}\n${sr.name}: ${fmt(v)}` }));
+    });
+    if (i % every === 0) g.append(s("text", { x: cx, y: H - 8, "text-anchor": "middle" }, c.short ?? c.label));
+  });
+  for (const r of refs) {
+    g.append(s("line", { x1: m.l, x2: W - m.r, y1: Y(r.y), y2: Y(r.y), class: "ref" }));
+    g.append(s("text", { x: W - m.r + 4, y: Y(r.y) + 4, class: "reflabel" }, r.label));
+  }
+  const kids = [];
+  if (series.length > 1) kids.push(legend(series.map(sr => ({ name: sr.name, color: sr.color }))));
+  kids.push(g);
+  box.replaceChildren(...kids);
+}
+
+function bars(box, rows, { max, color = "var(--s1)", emptyText = "Not enough data yet." } = {}) {
+  if (!rows.length) return empty(box, emptyText);
+  const top = max ?? Math.max(...rows.map(r => r.value));
+  box.replaceChildren(h("div", { class: "bars" }, rows.flatMap(r => [
+    h("div", { class: "lab", "data-tip": r.tip }, r.label),
+    h("div", { class: "track", "data-tip": r.tip },
+      h("div", { class: "bar", style: { width: `${Math.max(0.5, 100 * r.value / (top || 1))}%`, "--c": r.color ?? color } })),
+    h("div", { class: "val" }, r.text),
+  ])));
+}
+
+function sparkline(width, height, points, color) {
+  const g = s("svg", { width, height, viewBox: `0 0 ${width} ${height}` });
+  const xs = points.map((_, i) => i), ys = points;
+  const lo = Math.min(...ys), hi = Math.max(...ys);
+  const X = lin(0, Math.max(1, xs.length - 1), 4, width - 4), Y = lin(lo, hi === lo ? lo + 1 : hi, height - 5, 5);
+  g.append(s("path", { d: ys.map((y, i) => `${i ? "L" : "M"}${X(i).toFixed(1)},${Y(y).toFixed(1)}`).join(""), fill: "none", stroke: color, "stroke-width": 2, "stroke-linejoin": "round", "stroke-linecap": "round" }));
+  g.append(s("circle", { cx: X(ys.length - 1), cy: Y(ys.at(-1)), r: 4, fill: color, stroke: "var(--surface)", "stroke-width": 2 }));
+  return g;
+}
+
+// ---------- sections ----------
+function renderTiles() {
+  const minutes = runs.reduce((a, r) => a + secs(r), 0) / 60;
+  const days = new Set(runs.map(r => dayKey(r.t)));
+  const today = runs.filter(r => dayKey(r.t) === dayKey(D.generated)).reduce((a, r) => a + secs(r), 0) / 60;
+  const cur = P.stage ?? 0;
+  const best = Math.max(0, ...runs.filter(r => r.stage === cur && r.mode === "words").map(r => r.wpm));
+  const recent = runs.slice(-5);
+  const tile = (label, value, note) => h("div", { class: "tile" }, [h("div", { class: "label" }, label), h("div", { class: "value" }, value), h("div", { class: "note" }, note)]);
+  $("tiles").replaceChildren(
+    tile("Practice", fmtMin(minutes), `over ${days.size} day${days.size === 1 ? "" : "s"}`),
+    tile("Today", fmtMin(today), `goal ${D.goal} min`),
+    tile("Runs", String(runs.length), `${runs.length ? runs.at(-1).session : 0} sessions`),
+    tile("Stage", String(cur), STAGES[cur]?.name ?? ""),
+    tile("Best new-keys speed", best ? `${best.toFixed(0)} wpm` : "–", D.baseline ? `QWERTY baseline ${D.baseline.toFixed(0)}` : "no baseline yet"),
+    tile("Recent accuracy", recent.length ? `${mean(recent.map(r => r.acc)).toFixed(1)}%` : "–", "last 5 runs"),
+  );
+  $("meta").textContent = `${D.plan} · ${runs.length} runs · made ${new Date(D.generated).toLocaleString()}`;
+}
+
+function renderFilters() {
+  const box = $("modes");
+  box.querySelectorAll("button").forEach(b => b.remove());
+  for (const m of modes) {
+    const b = h("button", { class: "chip", "aria-pressed": String(m === state.mode) }, MODE_LABELS[m] ?? m);
+    b.onclick = () => { state.mode = m; renderAll(); };
+    box.append(b);
+  }
+  const sel = $("stage");
+  sel.replaceChildren(...(stagesWithData.length ? stagesWithData : [state.stage]).map(i => h("option", { value: i }, stageLabel(i))));
+  sel.value = state.stage;
+  sel.onchange = () => { state.stage = +sel.value; renderKeys(); };
+  const hm = $("heatmode");
+  hm.replaceChildren(...[["ms", "speed"], ["miss", "misses"]].map(([k, l]) => {
+    const b = h("button", { class: "chip", "aria-pressed": String(state.heat === k) }, l);
+    b.onclick = () => { state.heat = k; renderKeys(); hm.querySelectorAll("button").forEach(x => x.setAttribute("aria-pressed", String(x === b))); };
+    return b;
+  }));
+}
+
+function renderSpeed() {
+  const rs = runs.filter(r => r.mode === state.mode);
+  const pts = rs.map((r, i) => ({ x: i + 1, y: r.wpm, tip: `Run ${i + 1} · stage ${r.stage} · ${fmtDate(r.t)}\n${r.acc}% accuracy` }));
+  const avg = pts.map((p, i) => ({ x: p.x, y: mean(pts.slice(Math.max(0, i - 4), i + 1).map(q => q.y)) }));
+  const bands = [];
+  rs.forEach((r, i) => {
+    if (bands.length && bands.at(-1).label === r.stage) bands.at(-1).x1 = i + 1;
+    else bands.push({ label: r.stage, x0: i + 1, x1: i + 1 });
+  });
+  const refs = [];
+  if (D.baseline) {
+    refs.push({ y: D.baseline, label: "baseline" });
+    if (state.mode === "real") refs.push({ y: D.baseline * D.gate.speedShare, label: `gate ${Math.round(D.gate.speedShare * 100)}%` });
+  }
+  const label = MODE_LABELS[state.mode] ?? state.mode;
+  $("speed-sub").textContent = `${label}: each run and the average of the last five`;
+  lineChart($("speed"), {
+    series: [
+      { name: "each run", color: "var(--s1)", points: pts, dots: true, faint: true },
+      { name: "last 5 average", color: "var(--s2)", points: avg },
+    ],
+    refs, bands, yMin: 0, yFmt: v => Math.round(v),
+  });
+  const gateAcc = state.mode === "words" ? D.gate.wordsAccuracy : state.mode === "real" ? D.gate.realAccuracy : null;
+  $("acc-sub").textContent = gateAcc ? `${label}, with the gate's ${gateAcc}% line` : label;
+  const apts = rs.map((r, i) => ({ x: i + 1, y: r.acc, tip: `Run ${i + 1} · stage ${r.stage} · ${fmtDate(r.t)}\n${r.wpm} wpm` }));
+  lineChart($("acc"), {
+    series: [{ name: "accuracy", color: "var(--s1)", points: apts, dots: true }],
+    refs: gateAcc ? [{ y: gateAcc, label: `gate ${gateAcc}%` }] : [],
+    bands, height: 180, yMax: 100, yFmt: v => `${+v.toFixed(1)}`,
+  });
+}
+
+function renderWithin() {
+  const box = $("within");
+  const label = MODE_LABELS[state.mode] ?? state.mode;
+  const cards = [];
+  for (let st = 0; st < STAGES.length; st++) {
+    const rs = runs.filter(r => r.stage === st && r.mode === state.mode);
+    if (rs.length < 2) continue;
+    const pts = rs.map((r, i) => ({ x: i + 1, y: r.wpm, tip: `Stage ${st}, run ${i + 1} · ${fmtDate(r.t)}\n${r.acc}% accuracy` }));
+    const f = fit(pts);
+    const trend = [{ x: 1, y: f.at(1) }, { x: pts.length, y: f.at(pts.length) }];
+    const inner = h("div");
+    const best = Math.max(...pts.map(p => p.y));
+    const card = h("div", { class: "card" }, [
+      h("h3", {}, stageLabel(st)),
+      h("p", { class: "sub" }, `${f.slope >= 0 ? "+" : "−"}${Math.abs(f.slope).toFixed(2)} wpm a run · ${rs.length} runs · best ${best.toFixed(0)}`),
+      inner,
+    ]);
+    cards.push([card, inner, pts, trend]);
+  }
+  if (!cards.length) return empty(box, `Two or more ${label} runs in a stage draw its climb here.`);
+  box.replaceChildren(...cards.map(c => c[0]));
+  for (const [, inner, pts, trend] of cards)
+    lineChart(inner, {
+      series: [{ name: "wpm", color: "var(--s1)", points: pts, dots: true }, { name: "trend", color: "var(--s2)", points: trend }],
+      height: 150, yMin: 0, yFmt: v => Math.round(v),
+    });
+}
+
+function renderAcross() {
+  const cats = [], first = [], latest = [], tf = [], tl = [];
+  for (let st = 0; st < STAGES.length; st++) {
+    const rs = runs.filter(r => r.stage === st && r.mode === state.mode);
+    if (!rs.length) continue;
+    const a = mean(rs.slice(0, 3).map(r => r.wpm)), b = mean(rs.slice(-3).map(r => r.wpm));
+    cats.push({ label: stageLabel(st), short: `S${st}` });
+    first.push(a); latest.push(b);
+    tf.push(`${stageLabel(st)}\nfirst 3 runs: ${a.toFixed(1)} wpm`);
+    tl.push(`${stageLabel(st)}\nlatest 3 runs: ${b.toFixed(1)} wpm (${rs.length} runs)`);
+  }
+  columns($("across"), {
+    cats,
+    series: [{ name: "first 3", color: "var(--s1)", values: first, tips: tf }, { name: "latest 3", color: "var(--s2)", values: latest, tips: tl }],
+    refs: D.baseline ? [{ y: D.baseline, label: "baseline" }] : [],
+    fmt: v => Math.round(v),
+  });
+  const per = STAGES.map((_, st) => runs.filter(r => r.stage === st).reduce((a, r) => a + secs(r), 0) / 60);
+  bars($("stagetime"), per.map((m, st) => ({ m, st })).filter(x => x.m > 0).map(({ m, st }) => ({
+    label: `S${st} ${STAGES[st].name}`, value: m, text: fmtMin(m),
+    tip: `${stageLabel(st)}\n${fmtMin(m)} over ${runs.filter(r => r.stage === st).length} runs`,
+  })), { emptyText: "No practice yet." });
+}
+
+function renderKeys() {
+  const st = state.stage;
+  const stage = STAGES[st];
+  $("keys-stage").textContent = `· ${stageLabel(st)}`;
+  const letters = P.letters?.[st] ?? {};
+  const focus = new Set(stage.focus);
+  const rate = x => x.miss / Math.max(1, x.n + x.miss);
+  // the board
+  const stats = [...stage.keys].map(c => ({ c, st: letters[c] }));
+  const msVals = stats.filter(k => k.st?.n > 0).map(k => k.st.ms / k.st.n);
+  const missVals = stats.filter(k => k.st && k.st.n + k.st.miss > 0).map(k => rate(k.st));
+  const [lo, hi] = state.heat === "ms" ? [Math.min(...msVals), Math.max(...msVals)] : [0, Math.max(0.0001, ...missVals)];
+  const hue = state.heat === "ms" ? "--s1" : "--s2";
+  const keys = [];
+  stats.forEach((k, i) => {
+    if (i % 10 === 5) keys.push(h("div", { class: "gap" }));
+    const n = k.st?.n ?? 0, miss = k.st?.miss ?? 0;
+    const v = state.heat === "ms" ? (n ? k.st.ms / n : null) : (n + miss ? rate(k.st) : null);
+    const t = v == null ? null : (v - lo) / ((hi - lo) || 1);
+    const style = t == null ? {} : { "--heat": heat(hue, t), "--kc": t > 0.6 ? "#fff" : "var(--ink)", "--kc2": t > 0.6 ? "rgba(255,255,255,.85)" : "var(--ink-2)" };
+    const text = v == null ? "" : state.heat === "ms" ? `${Math.round(v)}` : `${(v * 100).toFixed(0)}%`;
+    keys.push(h("div", {
+      class: `key${focus.has(k.c) ? " focus" : ""}`, style,
+      "data-tip": `${k.c}${focus.has(k.c) ? " (moved this stage)" : ""}\n${n ? `${Math.round(k.st.ms / n)} ms average over ${n}` : "no timings yet"}\n${miss} missed`,
+    }, [h("b", {}, k.c), h("span", {}, text)]));
+  });
+  const kb = $("kb");
+  if (!msVals.length && !missVals.length) empty(kb, "No key timings for this stage yet.");
+  else {
+    const ramp = h("div", { class: "ramp" }, [0, 0.25, 0.5, 0.75, 1].map(t => h("i", { style: { "--heat": heat(hue, t) } })));
+    const fmtv = v => state.heat === "ms" ? `${Math.round(v)} ms` : `${(v * 100).toFixed(0)}%`;
+    kb.replaceChildren(h("div", { class: "kb" }, keys), h("div", { class: "scale" }, [fmtv(lo), ramp, fmtv(hi), h("span", {}, state.heat === "ms" ? "· darker is slower" : "· darker is missed more")]));
+  }
+  $("kb-sub").textContent = state.heat === "ms" ? "Average milliseconds to reach each key" : "Share of presses that were wrong when each key was wanted";
+
+  const ks = Object.entries(letters).filter(([c]) => c !== " ");
+  bars($("slow"), ks.filter(([, x]) => x.n >= 5).map(([c, x]) => ({ c, x, v: x.ms / x.n })).sort((a, b) => b.v - a.v).slice(0, 12).map(({ c, x, v }) => ({
+    label: h("span", {}, [show(c), focus.has(c) ? h("small", {}, "moved") : null]), value: v, text: `${Math.round(v)} ms`,
+    tip: `${c}: ${Math.round(v)} ms average over ${x.n} presses`,
+  })), { emptyText: "Keys show up here after five presses." });
+  bars($("missed"), Object.entries(letters).filter(([, x]) => x.miss > 0 && x.n + x.miss >= 5).map(([c, x]) => ({ c, x, v: rate(x) })).sort((a, b) => b.v - a.v).slice(0, 12).map(({ c, x, v }) => ({
+    label: h("span", {}, [show(c), focus.has(c) ? h("small", {}, "moved") : null]), value: v * 100, text: (v * 100).toFixed(1),
+    tip: `${show(c)}: missed ${x.miss} of ${x.n + x.miss} times`,
+  })), { color: "var(--s2)", emptyText: "Nothing missed yet. Show-off." });
+
+  // each key over time
+  const stageRuns = runs.filter(r => r.stage === st && r.letters);
+  const series = {};
+  for (const r of stageRuns)
+    for (const [c, x] of Object.entries(r.letters))
+      if (c !== " " && x.n >= 2) (series[c] ??= []).push(x.ms / x.n);
+  const order = Object.entries(series).filter(([, v]) => v.length >= 3)
+    .sort(([a, va], [b, vb]) => (focus.has(b) - focus.has(a)) || vb.length - va.length).slice(0, 18);
+  const sp = $("sparks");
+  if (!order.length) empty(sp, stageRuns.length
+    ? "Keys need three runs each before they get a line."
+    : "Per-run key timings are recorded from this version on. Each run you finish adds a point here.");
+  else {
+    sp.replaceChildren(h("div", { class: "sparks" }, order.map(([c, v]) => {
+      const a = mean(v.slice(0, 3)), b = mean(v.slice(-3)), d = b / a - 1;
+      const box = h("div", { class: "spark", "data-tip": `${c}${focus.has(c) ? " (moved this stage)" : ""}\nfirst 3 runs ${Math.round(a)} ms → latest 3 ${Math.round(b)} ms\n${v.length} runs` }, [
+        h("div", { class: "top" }, [h("b", {}, c), h("span", { class: `delta${d < -0.02 ? " better" : ""}` }, `${Math.round(a)} → ${Math.round(b)} ms`)]),
+      ]);
+      box._v = v;
+      return box;
+    })));
+    sp.querySelectorAll(".spark").forEach(b => b.append(sparkline(Math.max(100, b.clientWidth - 20), 40, b._v, "var(--s1)")));
+  }
+
+  // typos
+  const typos = {};
+  for (const r of runs) if (r.stage === st && r.typos) for (const [k, n] of Object.entries(r.typos)) typos[k] = (typos[k] ?? 0) + n;
+  const now = stage.keys, prev = STAGES[st - 1]?.keys, base = STAGES[0].keys;
+  const habit = (want, typed) => {
+    for (const [label, old] of [["old spot", prev], ["qwerty spot", st > 1 ? base : null]]) {
+      if (!old) continue;
+      const i = old.indexOf(want);
+      if (i >= 0 && now[i] === typed && typed !== want) return label;
+    }
+    return null;
+  };
+  bars($("typos"), Object.entries(typos).sort((a, b) => b[1] - a[1]).slice(0, 12).map(([k, n]) => {
+    const [want, typed] = [k[0], k.slice(2)];
+    const hb = habit(want, typed);
+    return {
+      label: h("span", {}, [`${show(want)} → ${show(typed)}`, hb ? h("span", { class: "tag" }, hb) : null]),
+      value: n, text: String(n), color: "var(--s2)",
+      tip: `wanted ${show(want)}, typed ${show(typed)}: ${n} time${n === 1 ? "" : "s"}${hb ? `\nthe key where ${show(want)} used to be types ${show(typed)} now` : ""}`,
+    };
+  }), { emptyText: runs.some(r => r.typos) ? "No typos in this stage. Iconic." : "Typos are recorded from this version on." });
+
+  // pairs
+  const pairs = P.pairs?.[st] ?? {};
+  bars($("pairs"), Object.entries(pairs).filter(([, x]) => x.n >= 3).map(([k, x]) => ({ k, x, v: x.ms / x.n })).sort((a, b) => b.v - a.v).slice(0, 14).map(({ k, x, v }) => ({
+    label: h("span", {}, [k, [...k].some(c => focus.has(c)) ? h("small", {}, "moved") : null]), value: v, text: `${Math.round(v)} ms`,
+    tip: `${k[0]} then ${k[1]}: ${Math.round(v)} ms over ${x.n}${x.miss ? `, ${x.miss} missed` : ""}`,
+  })), { emptyText: Object.keys(P.pairs ?? {}).length ? "Pairs show up after three of each." : "Key pairs are recorded from this version on." });
+}
+
+function renderHabits() {
+  const byDay = {};
+  for (const r of runs) { const k = dayKey(r.t); (byDay[k] ??= { m: 0, n: 0 }); byDay[k].m += secs(r) / 60; byDay[k].n++; }
+  const end = new Date(D.generated); end.setHours(12, 0, 0, 0);
+  const firstRun = runs.length ? new Date(runs[0].t) : end;
+  const weeks = Math.min(52, Math.max(8, Math.ceil((end - firstRun) / (7 * 864e5)) + 1));
+  const start = new Date(end); start.setDate(start.getDate() - (weeks * 7 - 1));
+  while ((start.getDay() + 6) % 7 !== 0) start.setDate(start.getDate() - 1); // back to a Monday
+  const cells = [], cap = D.goal * 2;
+  for (const d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+    const k = dayKey(d), x = byDay[k];
+    const style = x ? { "--heat": heat("--s1", Math.min(1, x.m / cap)) } : {};
+    cells.push(h("i", {
+      class: x && x.m >= D.goal ? "goal" : null, style,
+      "data-tip": `${d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })}\n${x ? `${fmtMin(x.m)} · ${x.n} runs` : "no practice"}`,
+    }));
+  }
+  $("cal").replaceChildren(h("div", { class: "cal" }, cells));
+  const active = Object.values(byDay);
+  $("cal-sub").textContent = active.length
+    ? `${active.length} day${active.length === 1 ? "" : "s"} practised, ${fmtMin(mean(active.map(x => x.m)))} on an average day. Outlined days hit the ${D.goal}-minute goal.`
+    : "No practice yet.";
+  $("cal-scale").replaceChildren(h("div", { class: "scale" }, ["0", h("div", { class: "ramp" }, [0, 0.25, 0.5, 0.75, 1].map(t => h("i", { style: { "--heat": heat("--s1", t) } }))), `${cap}+ min`]));
+
+  const bucket = (key, cats) => {
+    const v = cats.map(c => runs.filter(r => key(r) === c.k).map(r => r.rel));
+    return { values: v.map(a => a.length ? mean(a) : null), tips: v.map((a, i) => a.length ? `${cats[i].label}\n${pct(mean(a))} vs usual · ${a.length} runs` : "") };
+  };
+  const posCats = Array.from({ length: Math.min(10, Math.max(0, ...runs.map(r => r.pos))) }, (_, i) => ({ k: i + 1, label: `run ${i + 1} of a session`, short: `${i + 1}` }));
+  const pb = bucket(r => Math.min(r.pos, posCats.length), posCats);
+  if (posCats.length < 2) empty($("fatigue"), "Sessions with a few runs in a row show up here.");
+  else columns($("fatigue"), { cats: posCats, series: [{ name: "speed vs usual", values: pb.values, tips: pb.tips }], fmt: v => pct(v), signed: true });
+  const hrs = [...new Set(runs.map(r => new Date(r.t).getHours()))].sort((a, b) => a - b);
+  const hourCats = hrs.map(hh => ({ k: hh, label: `${pad(hh)}:00–${pad(hh)}:59`, short: `${hh}` }));
+  const hb = bucket(r => new Date(r.t).getHours(), hourCats);
+  if (hrs.length < 2) empty($("hours"), "Practise at a few different times of day to fill this in.");
+  else columns($("hours"), { cats: hourCats, series: [{ name: "speed vs usual", values: hb.values, tips: hb.tips }], fmt: v => pct(v), signed: true });
+}
+
+function renderTable() {
+  const head = h("tr", {}, ["When", "Stage", "Drill", "WPM", "Accuracy", "Seconds", "Session"].map(t => h("th", {}, t)));
+  const rows = [...runs].reverse().map(r => h("tr", {}, [fmtDate(r.t), stageLabel(r.stage), MODE_LABELS[r.mode] ?? r.mode, r.wpm, `${r.acc}%`, r.secs || "", r.session].map(v => h("td", {}, String(v)))));
+  $("table").replaceChildren(h("thead", {}, head), h("tbody", {}, rows));
+}
+
+function renderAll() {
+  renderFilters();
+  renderSpeed();
+  renderWithin();
+  renderAcross();
+  renderKeys();
+  renderHabits();
+}
+renderTiles();
+renderAll();
+renderTable();
+let resize;
+addEventListener("resize", () => { clearTimeout(resize); resize = setTimeout(renderAll, 150); });
+</script>
+</body>
+</html>

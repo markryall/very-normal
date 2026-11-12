@@ -160,9 +160,10 @@ impl App {
             wpm,
             acc,
             secs: (self.drill.elapsed(now).as_secs_f64() * 10.0).round() / 10.0,
+            letters: self.drill.letters().clone(),
+            typos: self.drill.typos().clone(),
         };
-        let letters = self.drill.letters().clone();
-        self.progress.record(run, &letters);
+        self.progress.record(run, self.drill.pairs());
         self.save();
 
         let mut good = true;
@@ -322,6 +323,21 @@ impl App {
                     Err(e) => vec![format!("Couldn't read Oryx: {e}")],
                 };
             }
+            KeyCode::Char('g') => {
+                let out = crate::charts::default_path(&self.path);
+                let now_ms = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_millis() as u64)
+                    .unwrap_or(0);
+                self.message = Some(
+                    match crate::charts::write(&self.progress, &out, now_ms)
+                        .and_then(|()| crate::open_url(&out.display().to_string()))
+                    {
+                        Ok(()) => (format!("Charts opened from {}", out.display()), true),
+                        Err(e) => (format!("Couldn't make the charts: {e}"), false),
+                    },
+                );
+            }
             KeyCode::Char('o') => {
                 let url = oryx::edit_url(&self.layout_id);
                 self.message = Some(match crate::open_url(&url) {
@@ -387,7 +403,7 @@ impl App {
         } else if self.typing {
             "type the text · esc stops without saving"
         } else {
-            "←/→ stage · 1-6 drill · enter start · u warm-up · n new text · c check oryx · o open oryx · k/v/w tick · q quit"
+            "←/→ stage · 1-6 drill · enter start · u warm-up · n new text · g charts · c check oryx · o open oryx · k/v/w tick · q quit"
         };
         frame.render_widget(Paragraph::new(help).style(dim()), footer);
     }
@@ -906,6 +922,7 @@ mod coach_tests {
                 wpm: 15.0,
                 acc: 98.0,
                 secs: 120.0,
+                ..Run::default()
             })
             .collect();
         let p = Progress {
@@ -990,6 +1007,7 @@ mod verdict_tests {
             wpm: 15.0,
             acc,
             secs: 60.0,
+            ..Run::default()
         }
     }
 

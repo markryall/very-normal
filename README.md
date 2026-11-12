@@ -32,6 +32,7 @@ very-normal keymap kanata    # this stage as a kanata config (or karabiner), for
 very-normal stage 2          # set the stage you're practising
 very-normal baseline 35      # type in a baseline instead of recording one
 very-normal import backup.json   # merge a backup copied out of the web tutor
+very-normal charts           # a page of charts from your progress, opened in the browser
 very-normal export           # print progress as JSON
 ```
 
@@ -41,7 +42,7 @@ In the trainer:
   60 seconds of real text, markdown links, or one-handed mirror practice.
 - `enter` starts typing. Wrong keys don't advance. If you pause, the key you
   want lights up on the map. `esc` stops without saving.
-- `c` checks Oryx and `o` opens the layout there.
+- `c` checks Oryx and `o` opens the layout there. `g` opens your charts.
 - `k`, `v` and `w` tick the gate's manual boxes.
 
 ## The coach
@@ -55,6 +56,25 @@ In the trainer:
   earlier in the session, speed 15% down, three gate misses in a row, or
   three restarts in ten minutes), it suggests a break. That's usually
   frustration or tired fingers, not you getting worse.
+
+## Charts
+
+`very-normal charts` (or `g` in the trainer) writes
+`~/.local/share/very-normal/charts.html`, one self-contained page that works
+offline, and opens it. It shows:
+
+- speed and accuracy run by run, with stages shaded and the gate's lines
+- how fast each stage climbs (a trend per stage) and where each stage
+  started and got to against your QWERTY baseline
+- the board as a heatmap of slow or missed keys, the slowest and most missed
+  keys, and each key's speed over time
+- what you typed instead of the key you wanted, tagged when your finger went
+  to where that key used to be, and the slowest pairs of keys
+- a practice calendar, and whether you slow down late in a session or at
+  certain times of day
+
+Runs saved before charts existed have no per-run key timings, typos or key
+pairs, so those charts fill in as you practise.
 
 ## The warm-up
 

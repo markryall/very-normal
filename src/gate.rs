@@ -175,6 +175,7 @@ mod tests {
             wpm,
             acc,
             secs: 60.0,
+            ..Run::default()
         }
     }
 

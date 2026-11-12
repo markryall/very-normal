@@ -1,4 +1,5 @@
 pub mod app;
+pub mod charts;
 pub mod coach;
 pub mod drill;
 pub mod gate;
