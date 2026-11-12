@@ -17,7 +17,8 @@ z x c v k   ; f , . /
 **Want one made from your typing?** See [MAKE_YOUR_OWN.md](MAKE_YOUR_OWN.md).
 It has a prompt that walks Claude Code through building a layout and plan
 from your own transcripts, plus a summary you can share. I'm collecting those
-to see how much layouts vary between people.
+to see how much layouts vary between people. It also takes any other text you wrote
+(`--text notes.md emails.txt`) instead of transcripts.
 
 ## Use
 
@@ -50,6 +51,12 @@ In the trainer:
   in a day, it won't start a drill unless you press enter twice.
 - A five-minute pause counts as a break.
 - If your accuracy slides three runs in a row, it sends you off to stretch.
+
+## The warm-up
+
+The first drill of the day starts with a guided one-minute warm-up: slow
+breaths, then gentle hand and wrist stretches. `enter` moves to the next step,
+`s` skips it (the coach will judge you), and `u` runs it any time.
 
 ## The gate
 

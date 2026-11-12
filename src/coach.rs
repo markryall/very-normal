@@ -68,6 +68,11 @@ fn day(ms: u64) -> NaiveDate {
     local(ms).date_naive()
 }
 
+/// Today's local date as YYYY-MM-DD.
+pub fn today(now_ms: u64) -> String {
+    day(now_ms).to_string()
+}
+
 fn minutes_on(runs: &[Run], date: NaiveDate) -> f64 {
     // an empty f64 sum is -0.0, which prints as "-0"
     0.0 + runs

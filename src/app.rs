@@ -14,6 +14,7 @@ use crate::drill::{Drill, Mode, Rng, build};
 use crate::gate;
 use crate::layout;
 use crate::store::{Progress, Run};
+use crate::warmup::{self, Warmup};
 use crate::{coach, oryx, report};
 
 const PINK: Color = Color::Magenta;
@@ -33,6 +34,8 @@ pub struct App {
     layout_id: String,
     /// Set when the coach said stop and you pressed enter anyway once.
     override_armed: bool,
+    /// The warm-up, while it runs.
+    warmup: Option<Warmup>,
     pub should_quit: bool,
 }
 
@@ -64,6 +67,7 @@ impl App {
             check: Vec::new(),
             layout_id: oryx::layout_id(),
             override_armed: false,
+            warmup: None,
             should_quit: false,
         }
     }
@@ -93,12 +97,36 @@ impl App {
 
     /// Ends a timed drill once its minute is up.
     pub fn tick(&mut self, now: Instant) {
+        if self.warmup.as_ref().is_some_and(|w| w.done(now)) {
+            self.end_warmup(true);
+        }
         if self.typing {
             self.drill.tick(now);
             if self.drill.done {
                 self.finish(now);
             }
         }
+    }
+
+    fn needs_warmup(&self) -> bool {
+        self.progress.warmed_up.as_deref() != Some(coach::today(now_ms()).as_str())
+    }
+
+    fn end_warmup(&mut self, completed: bool) {
+        self.warmup = None;
+        self.progress.warmed_up = Some(coach::today(now_ms()));
+        self.save();
+        self.message = Some(if completed {
+            (
+                "Warmed up. Fingers loose, shoulders down. Press enter to start.".into(),
+                true,
+            )
+        } else {
+            (
+                "Skipping the warm-up? Bold. Your wrists will remember this.".into(),
+                false,
+            )
+        });
     }
 
     fn finish(&mut self, now: Instant) {
@@ -169,6 +197,26 @@ impl App {
             self.should_quit = true;
             return;
         }
+        if let Some(w) = &mut self.warmup {
+            match key.code {
+                KeyCode::Enter | KeyCode::Tab | KeyCode::Char(' ') => {
+                    w.skip_step(now);
+                    if w.done(now) {
+                        self.end_warmup(true);
+                    }
+                }
+                KeyCode::Char('s') => self.end_warmup(false),
+                KeyCode::Esc => {
+                    self.warmup = None;
+                    self.message = Some((
+                        "Warm-up paused. Press enter when you're ready.".into(),
+                        true,
+                    ));
+                }
+                _ => {}
+            }
+            return;
+        }
         if self.typing {
             match key.code {
                 KeyCode::Esc => {
@@ -216,12 +264,21 @@ impl App {
                     return;
                 }
                 self.override_armed = false;
+                if self.needs_warmup() {
+                    self.warmup = Some(Warmup::new(now));
+                    self.message = None;
+                    return;
+                }
                 if self.drill.done || self.drill.started() {
                     self.new_drill(now);
                 }
                 self.message = None;
                 self.drill.touch(now);
                 self.typing = true;
+            }
+            KeyCode::Char('u') => {
+                self.warmup = Some(Warmup::new(now));
+                self.message = None;
             }
             KeyCode::Char('n') => {
                 self.message = None;
@@ -293,10 +350,12 @@ impl App {
         self.render_next(frame, next);
         self.render_gate(frame, gate);
         self.render_trainer(frame, trainer, now);
-        let help = if self.typing {
+        let help = if self.warmup.is_some() {
+            "enter next step · s skip the warm-up · esc pause"
+        } else if self.typing {
             "type the text · esc stops without saving"
         } else {
-            "←/→ stage · 1-6 drill · enter start · n new text · c check oryx · o open oryx · k/v/w tick · q quit"
+            "←/→ stage · 1-6 drill · enter start · u warm-up · n new text · c check oryx · o open oryx · k/v/w tick · q quit"
         };
         frame.render_widget(Paragraph::new(help).style(dim()), footer);
     }
@@ -503,7 +562,61 @@ impl App {
         );
     }
 
+    fn render_warmup(&self, frame: &mut Frame, area: Rect, w: &Warmup, now: Instant) {
+        let current = w.current(now);
+        let mut lines = vec![
+            Line::styled(
+                format!(
+                    "About {} seconds. Gentle: nothing should hurt.",
+                    Warmup::total()
+                ),
+                dim(),
+            ),
+            Line::raw(""),
+        ];
+        for (i, step) in warmup::STEPS.iter().enumerate() {
+            let line = match current {
+                Some((c, left)) if c == i => Line::from(vec![
+                    Span::styled(
+                        format!(" ▶ {} ", step.title),
+                        Style::new()
+                            .fg(Color::Black)
+                            .bg(PINK)
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                    Span::styled(format!("  {left}s  "), Style::new().fg(PINK)),
+                    Span::raw(step.how),
+                ]),
+                Some((c, _)) if c > i => {
+                    Line::styled(format!(" ✓ {}", step.title), Style::new().fg(Color::Green))
+                }
+                _ => Line::styled(format!("   {} ({}s)", step.title, step.secs), dim()),
+            };
+            lines.push(line);
+        }
+        if let Some(b) = w.breath(now) {
+            lines.push(Line::raw(""));
+            lines.push(Line::styled(
+                format!("        {b}"),
+                Style::new().fg(TEAL).add_modifier(Modifier::BOLD),
+            ));
+        }
+        let block = Block::bordered()
+            .border_style(Style::new().fg(TEAL))
+            .title(" warm-up ");
+        frame.render_widget(
+            Paragraph::new(lines)
+                .block(block)
+                .wrap(Wrap { trim: false }),
+            area,
+        );
+    }
+
     fn render_trainer(&self, frame: &mut Frame, area: Rect, now: Instant) {
+        if let Some(w) = &self.warmup {
+            self.render_warmup(frame, area, w, now);
+            return;
+        }
         let s = self.stage();
         let mut tabs = Vec::new();
         for (n, m) in Mode::ALL.iter().enumerate() {
@@ -619,6 +732,12 @@ impl App {
 
     fn status_line(&self, now: Instant) -> Line<'static> {
         let d = &self.drill;
+        if !self.typing && self.needs_warmup() {
+            return Line::styled(
+                "Press enter to start. First session today, so a one-minute warm-up comes first.",
+                dim(),
+            );
+        }
         if !self.typing {
             return Line::styled(
                 "Press enter to start. If you hesitate, the key lights up on the map.",
@@ -669,6 +788,7 @@ mod tests {
         ));
         let p = Progress {
             stage: 1,
+            warmed_up: Some(coach::today(now_ms())),
             ..Default::default()
         };
         (App::new(p, path.clone(), Instant::now()), path)
@@ -758,6 +878,7 @@ mod coach_tests {
         let p = Progress {
             stage: 1,
             runs,
+            warmed_up: Some(coach::today(now_ms())),
             ..Default::default()
         };
         let mut app = App::new(p, path.clone(), Instant::now());
@@ -768,6 +889,57 @@ mod coach_tests {
         assert!(app.message.as_ref().unwrap().0.contains("rebel"));
         app.handle_key(enter, Instant::now());
         assert!(app.typing);
+        std::fs::remove_file(path).ok();
+    }
+}
+
+#[cfg(test)]
+mod warmup_tests {
+    use super::*;
+    use ratatui::crossterm::event::KeyEventKind;
+
+    fn key(code: KeyCode) -> KeyEvent {
+        KeyEvent::new_with_kind(code, KeyModifiers::NONE, KeyEventKind::Press)
+    }
+
+    #[test]
+    fn the_first_drill_of_the_day_starts_with_a_warm_up() {
+        let path =
+            std::env::temp_dir().join(format!("very-normal-warmup-{}.json", std::process::id()));
+        let mut app = App::new(
+            Progress {
+                stage: 1,
+                ..Default::default()
+            },
+            path.clone(),
+            Instant::now(),
+        );
+        let now = Instant::now();
+        app.handle_key(key(KeyCode::Enter), now);
+        assert!(app.warmup.is_some() && !app.typing);
+
+        app.handle_key(key(KeyCode::Char('s')), now);
+        assert!(app.warmup.is_none());
+        assert!(app.message.as_ref().unwrap().0.contains("Bold"));
+        assert_eq!(app.progress.warmed_up, Some(coach::today(now_ms())));
+
+        app.handle_key(key(KeyCode::Enter), now);
+        assert!(app.typing, "no second warm-up the same day");
+        std::fs::remove_file(path).ok();
+    }
+
+    #[test]
+    fn enter_steps_through_the_warm_up_to_the_end() {
+        let path =
+            std::env::temp_dir().join(format!("very-normal-warmup2-{}.json", std::process::id()));
+        let mut app = App::new(Progress::default(), path.clone(), Instant::now());
+        let now = Instant::now();
+        app.handle_key(key(KeyCode::Char('u')), now);
+        for _ in 0..warmup::STEPS.len() {
+            app.handle_key(key(KeyCode::Enter), now);
+        }
+        assert!(app.warmup.is_none());
+        assert!(app.message.as_ref().unwrap().0.contains("Warmed up"));
         std::fs::remove_file(path).ok();
     }
 }

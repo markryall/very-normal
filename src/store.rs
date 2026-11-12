@@ -19,6 +19,9 @@ pub struct Progress {
     /// Stage number, then the character, both as strings.
     #[serde(default)]
     pub letters: BTreeMap<String, BTreeMap<String, LetterStat>>,
+    /// The local date of the last warm-up, as YYYY-MM-DD.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub warmed_up: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
