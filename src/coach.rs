@@ -137,6 +137,56 @@ fn plural(n: f64, word: &str) -> String {
     }
 }
 
+/// Accuracy points below the session's best that count as a dip.
+const ACCURACY_DIP: f64 = 3.0;
+/// Share of the session's best speed that counts as a dip.
+const SPEED_DIP: f64 = 0.85;
+
+/// Spots a session getting worse rather than better, which is usually
+/// frustration or tired fingers, and says so kindly.
+fn deterioration(session: &[Run]) -> Option<String> {
+    let last = session.last()?;
+    // compare like with like: recall is faster than words, for instance
+    let same: Vec<&Run> = session
+        .iter()
+        .filter(|r| r.mode == last.mode && r.stage == last.stage)
+        .collect();
+    let take_five = "That's usually frustration or tired fingers talking, not you getting worse. Take five; it'll still be here.";
+
+    if last.mode == "words" && last.stage > 0 && same.len() >= 3 {
+        let misses = same
+            .iter()
+            .rev()
+            .take(3)
+            .all(|r| r.acc < crate::gate::WORDS_ACCURACY);
+        if misses {
+            return Some(format!(
+                "Three in a row under {:.0}%. {take_five}",
+                crate::gate::WORDS_ACCURACY
+            ));
+        }
+    }
+    if same.len() < 4 {
+        return None;
+    }
+    let (earlier, recent) = same.split_at(same.len() - 2);
+    let best_acc = earlier.iter().map(|r| r.acc).fold(f64::MIN, f64::max);
+    let best_wpm = earlier.iter().map(|r| r.wpm).fold(f64::MIN, f64::max);
+    let recent_acc = recent.iter().map(|r| r.acc).sum::<f64>() / 2.0;
+    let recent_wpm = recent.iter().map(|r| r.wpm).sum::<f64>() / 2.0;
+    if best_acc - recent_acc >= ACCURACY_DIP {
+        return Some(format!(
+            "Your accuracy's dipped ({best_acc:.0}% earlier, {recent_acc:.0}% lately). {take_five}"
+        ));
+    }
+    if recent_wpm < best_wpm * SPEED_DIP {
+        return Some(format!(
+            "You've slowed down ({best_wpm:.0} WPM earlier, {recent_wpm:.0} lately). {take_five}"
+        ));
+    }
+    None
+}
+
 pub fn assess(runs: &[Run], now_ms: u64) -> Advice {
     let today = day(now_ms);
     let today_minutes = minutes_on(runs, today);
@@ -180,17 +230,8 @@ pub fn assess(runs: &[Run], now_ms: u64) -> Advice {
             ),
         );
     }
-    if current.len() >= 3 {
-        let last3: Vec<f64> = current.iter().rev().take(3).rev().map(|r| r.acc).collect();
-        if last3[0] > last3[1] && last3[1] > last3[2] && last3[2] < 92.0 {
-            return advice(
-                Level::Nudge,
-                format!(
-                    "Accuracy's sliding ({:.0}% → {:.0}%). Sloppy reps teach sloppy fingers. Take five.",
-                    last3[0], last3[2]
-                ),
-            );
-        }
+    if let Some(message) = deterioration(current) {
+        return advice(Level::Nudge, message);
     }
     if session_minutes >= SESSION_NUDGE {
         return advice(
@@ -327,13 +368,50 @@ mod tests {
     }
 
     #[test]
-    fn notices_sliding_accuracy() {
+    fn notices_three_misses_in_a_row() {
         let mut runs = block(noon(), 3, 2.0);
-        runs[0].acc = 97.0;
-        runs[1].acc = 94.0;
-        runs[2].acc = 89.0;
+        for (r, acc) in runs.iter_mut().zip([96.0, 95.0, 96.5]) {
+            r.acc = acc;
+        }
         let a = assess(&runs, noon() + MIN);
-        assert!(a.message.contains("sliding"), "{}", a.message);
+        assert!(a.message.contains("Three in a row"), "{}", a.message);
+        assert!(a.message.contains("frustration"), "{}", a.message);
+    }
+
+    #[test]
+    fn notices_accuracy_dipping_against_the_session_best() {
+        let mut runs = block(noon(), 4, 2.0);
+        for (r, acc) in runs.iter_mut().zip([98.0, 99.0, 97.0, 94.0]) {
+            r.acc = acc;
+        }
+        let a = assess(&runs, noon() + MIN);
+        assert!(a.message.contains("dipped"), "{}", a.message);
+    }
+
+    #[test]
+    fn notices_slowing_down() {
+        let mut runs = block(noon(), 4, 2.0);
+        for (r, wpm) in runs.iter_mut().zip([20.0, 22.0, 17.0, 17.0]) {
+            r.wpm = wpm;
+        }
+        let a = assess(&runs, noon() + MIN);
+        assert!(a.message.contains("slowed down"), "{}", a.message);
+    }
+
+    #[test]
+    fn a_steady_session_gets_no_dip_warning() {
+        let mut runs = block(noon(), 5, 2.0);
+        for (r, (acc, wpm)) in runs.iter_mut().zip([
+            (97.0, 15.0),
+            (98.0, 16.0),
+            (97.5, 16.5),
+            (98.0, 16.0),
+            (97.2, 15.8),
+        ]) {
+            r.acc = acc;
+            r.wpm = wpm;
+        }
+        assert_eq!(deterioration(&runs), None);
     }
 
     #[test]

@@ -19,6 +19,8 @@ use crate::{coach, oryx, report};
 
 const PINK: Color = Color::Magenta;
 const TEAL: Color = Color::Cyan;
+/// Restarts this close together suggest frustration.
+const ABANDON_WINDOW: std::time::Duration = std::time::Duration::from_secs(10 * 60);
 
 pub struct App {
     pub progress: Progress,
@@ -36,6 +38,9 @@ pub struct App {
     override_armed: bool,
     /// The warm-up, while it runs.
     warmup: Option<Warmup>,
+    /// When you recently gave up on a drill with esc; several close together
+    /// usually means frustration.
+    abandons: Vec<Instant>,
     pub should_quit: bool,
 }
 
@@ -68,6 +73,7 @@ impl App {
             layout_id: oryx::layout_id(),
             override_armed: false,
             warmup: None,
+            abandons: Vec::new(),
             should_quit: false,
         }
     }
@@ -132,7 +138,17 @@ impl App {
     fn finish(&mut self, now: Instant) {
         self.typing = false;
         let (stage, mode) = (self.drill.stage, self.drill.mode);
-        let (wpm, acc) = (self.drill.wpm(now), self.drill.accuracy());
+        // round once, so the number shown, the number saved and the number judged agree
+        let wpm = (self.drill.wpm(now) * 10.0).round() / 10.0;
+        let acc = (self.drill.accuracy() * 10.0).round() / 10.0;
+        let previous_best = self
+            .progress
+            .runs_for(stage, mode.id())
+            .iter()
+            .map(|r| r.wpm)
+            .fold(None, |best: Option<f64>, w| {
+                Some(best.map_or(w, |b| b.max(w)))
+            });
         let t = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_millis() as u64)
@@ -141,8 +157,8 @@ impl App {
             t,
             stage,
             mode: mode.id().into(),
-            wpm: (wpm * 10.0).round() / 10.0,
-            acc: (acc * 10.0).round() / 10.0,
+            wpm,
+            acc,
             secs: (self.drill.elapsed(now).as_secs_f64() * 10.0).round() / 10.0,
         };
         let letters = self.drill.letters().clone();
@@ -153,11 +169,13 @@ impl App {
         let verdict = match mode {
             Mode::Words if stage > 0 => {
                 good = acc >= gate::WORDS_ACCURACY;
-                if good {
-                    "Counts toward the gate.".to_string()
+                let hits = gate::words_hits(&self.progress, stage).min(gate::WORDS_NEEDED);
+                if good && hits >= gate::WORDS_NEEDED {
+                    "That one counts, and that's the accuracy part of the gate done!".to_string()
+                } else if good {
+                    format!("That one counts: {hits} of {}.", gate::WORDS_NEEDED)
                 } else {
-                    "Under 97%, so the run of three starts again. Slow down; accuracy first."
-                        .to_string()
+                    "Not one for the gate this time. Every rep still teaches your fingers; slow and smooth wins.".to_string()
                 }
             }
             Mode::Real if stage == 0 => "Saved toward your baseline.".to_string(),
@@ -186,8 +204,12 @@ impl App {
             }
             _ => String::new(),
         };
+        let record = match previous_best {
+            Some(best) if wpm > best && acc >= 90.0 => " New speed record for this stage!",
+            _ => "",
+        };
         self.message = Some((
-            format!("{wpm:.0} WPM · {acc:.1}% accuracy. {verdict}"),
+            format!("{wpm:.0} WPM · {acc:.1}% accuracy. {verdict}{record}"),
             good,
         ));
     }
@@ -221,7 +243,17 @@ impl App {
             match key.code {
                 KeyCode::Esc => {
                     self.typing = false;
-                    self.message = Some(("Stopped. Nothing was saved.".into(), true));
+                    self.abandons
+                        .retain(|t| now.duration_since(*t) < ABANDON_WINDOW);
+                    self.abandons.push(now);
+                    self.message = Some(if self.abandons.len() >= 3 {
+                        (
+                            "That's a few restarts in a row. Frustration makes fingers tense, and tense fingers miss. Take five and come back loose.".into(),
+                            false,
+                        )
+                    } else {
+                        ("Stopped. Nothing was saved.".into(), true)
+                    });
                     self.new_drill(now);
                 }
                 KeyCode::Char(c)
@@ -640,7 +672,8 @@ impl App {
         lines.push(Line::raw(""));
         lines.push(self.status_line(now));
         if let Some((msg, good)) = &self.message {
-            let color = if *good { Color::Green } else { Color::LightRed };
+            // misses are yellow, not red: they're information, not a telling-off
+            let color = if *good { Color::Green } else { Color::Yellow };
             lines.push(Line::styled(msg.clone(), Style::new().fg(color)));
         }
         let recent: Vec<_> = self.progress.runs.iter().rev().take(3).collect();
@@ -940,6 +973,60 @@ mod warmup_tests {
         }
         assert!(app.warmup.is_none());
         assert!(app.message.as_ref().unwrap().0.contains("Warmed up"));
+        std::fs::remove_file(path).ok();
+    }
+}
+
+#[cfg(test)]
+mod verdict_tests {
+    use super::*;
+    use crate::store::Run;
+
+    fn words_run(acc: f64) -> Run {
+        Run {
+            t: 1,
+            stage: 1,
+            mode: "words".into(),
+            wpm: 15.0,
+            acc,
+            secs: 60.0,
+        }
+    }
+
+    #[test]
+    fn the_number_shown_is_the_number_judged() {
+        // 96.96% shows as 97.0%, so it has to count as 97%
+        let p = Progress {
+            runs: vec![words_run((96.96f64 * 10.0).round() / 10.0)],
+            ..Default::default()
+        };
+        assert_eq!(gate::words_hits(&p, 1), 1);
+    }
+}
+
+#[cfg(test)]
+mod frustration_tests {
+    use super::*;
+    use ratatui::crossterm::event::KeyEventKind;
+
+    #[test]
+    fn several_restarts_suggest_a_break() {
+        let path = std::env::temp_dir().join(format!(
+            "very-normal-frustration-{}.json",
+            std::process::id()
+        ));
+        let p = Progress {
+            stage: 1,
+            warmed_up: Some(coach::today(now_ms())),
+            ..Default::default()
+        };
+        let mut app = App::new(p, path.clone(), Instant::now());
+        let key = |c| KeyEvent::new_with_kind(c, KeyModifiers::NONE, KeyEventKind::Press);
+        for _ in 0..3 {
+            app.handle_key(key(KeyCode::Enter), Instant::now());
+            app.handle_key(key(KeyCode::Esc), Instant::now());
+        }
+        assert!(app.message.as_ref().unwrap().0.contains("Frustration"));
         std::fs::remove_file(path).ok();
     }
 }

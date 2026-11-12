@@ -6,6 +6,9 @@ use crate::store::Progress;
 /// Real text has to get back to this share of your baseline speed.
 pub const SPEED_SHARE: f64 = 0.9;
 pub const WORDS_ACCURACY: f64 = 97.0;
+/// How many of the last `WORDS_WINDOW` new-keys runs must reach `WORDS_ACCURACY`.
+pub const WORDS_NEEDED: usize = 3;
+pub const WORDS_WINDOW: usize = 5;
 pub const REAL_ACCURACY: f64 = 95.0;
 
 /// The manual boxes, and the key that ticks each one in the TUI.
@@ -70,17 +73,19 @@ pub fn items(progress: &Progress, stage: usize) -> Vec<Item> {
     }
 
     let words = progress.runs_for(stage, "words");
-    let last3: Vec<_> = words.iter().rev().take(3).collect();
-    let words_ok = last3.len() == 3 && last3.iter().all(|r| r.acc >= WORDS_ACCURACY);
-    let words_detail = if last3.is_empty() {
+    let recent: Vec<_> = words.iter().rev().take(WORDS_WINDOW).collect();
+    let hits = words_hits(progress, stage);
+    let words_ok = hits >= WORDS_NEEDED;
+    let words_detail = if recent.is_empty() {
         "No new-keys runs yet".into()
     } else {
         format!(
-            "Last runs: {}",
-            last3
+            "{} of {WORDS_NEEDED} so far. Recent: {}",
+            hits.min(WORDS_NEEDED),
+            recent
                 .iter()
                 .rev()
-                .map(|r| format!("{:.0}%", r.acc))
+                .map(|r| format!("{:.1}%", r.acc))
                 .collect::<Vec<_>>()
                 .join(", ")
         )
@@ -108,7 +113,9 @@ pub fn items(progress: &Progress, stage: usize) -> Vec<Item> {
 
     vec![
         Item {
-            label: format!("New keys at {WORDS_ACCURACY:.0}%+, three runs in a row"),
+            label: format!(
+                "New keys at {WORDS_ACCURACY:.0}%+ in {WORDS_NEEDED} of your last {WORDS_WINDOW} runs"
+            ),
             ok: words_ok,
             detail: words_detail,
             tick: None,
@@ -138,6 +145,17 @@ pub fn items(progress: &Progress, stage: usize) -> Vec<Item> {
             tick: Some(Tick::Workday),
         },
     ]
+}
+
+/// How many of the last few new-keys runs reached the accuracy bar.
+pub fn words_hits(progress: &Progress, stage: usize) -> usize {
+    progress
+        .runs_for(stage, "words")
+        .iter()
+        .rev()
+        .take(WORDS_WINDOW)
+        .filter(|r| r.acc >= WORDS_ACCURACY)
+        .count()
 }
 
 pub fn passed(progress: &Progress, stage: usize) -> bool {
@@ -183,7 +201,10 @@ mod tests {
         assert!(passed(&p, 1));
 
         p.runs.push(run(1, "words", 25.0, 90.0));
-        assert!(!passed(&p, 1), "a sloppy run resets the run of three");
+        p.runs.push(run(1, "words", 25.0, 91.0));
+        assert!(passed(&p, 1), "a couple of wobbly runs don't wipe progress");
+        p.runs.push(run(1, "words", 25.0, 92.0));
+        assert!(!passed(&p, 1), "but the good runs have to be recent");
     }
 
     #[test]

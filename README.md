@@ -51,7 +51,10 @@ In the trainer:
 - After 15 minutes in a row it tells you to wrap up. After 25, or 45 minutes
   in a day, it won't start a drill unless you press enter twice.
 - A five-minute pause counts as a break.
-- If your accuracy slides three runs in a row, it sends you off to stretch.
+- If a session starts going backwards (accuracy a few points under your best
+  earlier in the session, speed 15% down, three gate misses in a row, or
+  three restarts in ten minutes), it suggests a break. That's usually
+  frustration or tired fingers, not you getting worse.
 
 ## The warm-up
 
@@ -63,7 +66,7 @@ breaths, then gentle hand and wrist stretches. `enter` moves to the next step,
 
 Before climbing a stage:
 
-1. Three new-keys runs in a row at 97%+ accuracy.
+1. New-keys runs at 97%+ accuracy in 3 of your last 5.
 2. Real text back to 90% of your baseline speed at 95%+ accuracy.
 3. That stage's vim commands used in real editing without fumbling.
 4. A full workday without thinking about the moved keys.
@@ -84,8 +87,14 @@ kanata` prints the current stage as a [kanata](https://github.com/jtroo/kanata)
 config (macOS, Linux, Windows), and `very-normal keymap karabiner` prints a
 [Karabiner-Elements](https://karabiner-elements.pqrs.org) complex modification
 for `~/.config/karabiner/assets/complex_modifications/`. Add a stage number to
-get a different one. Both remap in software and expect the keyboard to send
-QWERTY, so don't use them on a board whose firmware already has the stage.
+get a different one.
+
+Both remap in software and expect the keyboard to send QWERTY, so a keyboard
+whose firmware already has the stage must be left out, or its keys move twice.
+The Karabiner rule only applies to the Mac's built-in keyboard (add
+`--all-keyboards` to change that), so a remapped Voyager and a Very Normal
+laptop can live side by side. The kanata config includes a commented
+`macos-dev-names-include` line that does the same on macOS.
 
 ## Where things live
 
