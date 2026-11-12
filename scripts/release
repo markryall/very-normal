@@ -1,27 +1,44 @@
 #!/usr/bin/env bash
-# Releases the version in Cargo.toml from this machine: builds binaries for
-# macOS and Linux with dist (cargo-zigbuild cross-compiles Linux), tags it,
-# creates the GitHub release with the binaries and installers, publishes the
-# crate, and pushes the Homebrew formula to the tap.
+# Releases a new version from this machine: bumps Cargo.toml, dates the
+# changelog, builds binaries for macOS and Linux with dist (cargo-zigbuild
+# cross-compiles Linux), tags it, creates the GitHub release with the binaries
+# and installers, publishes the crate, and pushes the Homebrew formula to the
+# tap. No GitHub Actions or tokens: it uses your own gh login and push.
 #
-#   mise run publish              # do it
-#   mise run publish --dry-run    # build and check everything, publish nothing
+#   mise run publish 1.2.3              # release 1.2.3
+#   mise run publish 1.2.3 --dry-run    # check everything and build, publish nothing
+#   mise run publish                    # release the version already in Cargo.toml
 #
-# Needs: dist, zig, cargo-zigbuild, gh, jj, and the rustup targets
+# Release notes: the changelog's section for the version (CHANGELOG.md, dated
+# from `## Unreleased`), or tmp/release-notes.md without a changelog, then
+# dist's install instructions.
+# scripts/formula-extra.rb, if there is one, goes inside the generated formula
+# (for caveats and the like).
+#
+# Needs: brew install cargo-dist zig cargo-zigbuild; gh; jj; and
 #   rustup target add x86_64-apple-darwin x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu
-# Release notes: put them in tmp/release-notes.md first, or only dist's install
-# instructions are used.
+# This script is shared between markryall's Rust projects; keep the copies alike.
 set -euo pipefail
 
 dry_run=false
-[[ "${1:-}" == "--dry-run" ]] && dry_run=true
+version=""
+for arg in "$@"; do
+  case "$arg" in
+    --dry-run) dry_run=true ;;
+    [0-9]*.[0-9]*.[0-9]*) version="$arg" ;;
+    *) echo "usage: $0 [X.Y.Z] [--dry-run]" >&2; exit 2 ;;
+  esac
+done
 
 cd "$(dirname "$0")/.."
-name=$(sed -n 's/^name = "\(.*\)"/\1/p' Cargo.toml | head -1)
-version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
+name=$(sed -n '/^\[package\]/,/^\[/s/^name = "\(.*\)"/\1/p' Cargo.toml | head -1)
+current=$(sed -n '/^\[package\]/,/^\[/s/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
+version="${version:-$current}"
 tag="v$version"
 tap="${HOMEBREW_TAP_DIR:-$HOME/code/github/markryall/homebrew-tap}"
 distrib=target/distrib
+bump=false
+[[ "$version" != "$current" ]] && bump=true
 
 say() { printf '\n==> %s\n' "$*"; }
 fail() { printf 'release: %s\n' "$*" >&2; exit 1; }
@@ -33,7 +50,7 @@ run() {
   if $dry_run; then printf '  (dry run) %s\n' "$*"; else "$@"; fi
 }
 
-say "Checking $name $version ($tag)"
+say "Checking $name $current -> $version ($tag)"
 for tool in dist zig cargo-zigbuild gh jj; do
   command -v "$tool" >/dev/null || fail "$tool isn't installed"
 done
@@ -47,11 +64,34 @@ done
 [[ "$(jj log --no-graph -r main -T commit_id)" == "$(jj log --no-graph -r main@origin -T commit_id)" ]] ||
   check "main isn't pushed; run push first"
 if git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null; then
-  check "$tag is already on GitHub; bump the version in Cargo.toml"
+  check "$tag is already on GitHub; give a new version"
+fi
+if [[ -f CHANGELOG.md ]] && $bump && ! grep -q '^## Unreleased$' CHANGELOG.md; then
+  check "CHANGELOG.md has no '## Unreleased' section to date"
 fi
 [[ -d "$tap/Formula" ]] || fail "no Homebrew tap checkout at $tap (set HOMEBREW_TAP_DIR)"
-[[ -z "$(cd "$tap" && jj diff -r @ --summary)" ]] || check "the tap at $tap has uncommitted changes"
+[[ -z "$(jj -R "$tap" diff -r @ --summary)" ]] || check "the tap at $tap has uncommitted changes"
 cargo test --quiet >/dev/null || fail "tests fail"
+
+if $bump; then
+  say "Bumping to $version"
+  if $dry_run; then
+    printf '  (dry run) would set version = "%s" in Cargo.toml and date the changelog;\n' "$version"
+    printf '  building %s as it is instead\n' "$current"
+    version="$current"
+    tag="v$current"
+  else
+    sed -i '' "/^\[package\]/,/^\[/s/^version = \"$current\"/version = \"$version\"/" Cargo.toml
+    if [[ -f CHANGELOG.md ]]; then
+      sed -i '' "s/^## Unreleased\$/## Unreleased\\
+\\
+## $version - $(date +%Y-%m-%d)/" CHANGELOG.md
+    fi
+    cargo check --quiet # refreshes Cargo.lock
+    jj describe -m "Release $version"
+    fish -c push
+  fi
+fi
 
 say "Building every target"
 rm -rf "$distrib"
@@ -68,17 +108,32 @@ if missing:
 print("\n".join(os.path.join(sys.argv[2], n) for n in names))
 PY
 )
-notes=$(mktemp)
-trap 'rm -f "$notes"' EXIT
-[[ -f tmp/release-notes.md ]] && { cat tmp/release-notes.md; echo; } >"$notes"
-python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["announcement_github_body"])' "$manifest" >>"$notes"
 host=$(rustc -vV | sed -n 's/host: //p')
 host_bin=$(mktemp -d)
 tar -xJf "$distrib/$name-$host.tar.xz" -C "$host_bin"
-[[ "$("$host_bin/$name-$host/$name" --version)" == "$name $version" ]] ||
-  fail "the built binary doesn't report $name $version"
+bin=$(find "$host_bin" -type f -perm -u+x | head -1)
+"$bin" --version | grep -q "$version" || fail "the built binary doesn't report $version"
 rm -rf "$host_bin"
 if $dry_run; then cargo publish --dry-run --quiet --allow-dirty; else cargo publish --dry-run --quiet; fi
+
+notes=$(mktemp)
+trap 'rm -f "$notes"' EXIT
+# dist's announcement already includes the changelog's section for this version.
+if [[ ! -f CHANGELOG.md && -f tmp/release-notes.md ]]; then
+  { cat tmp/release-notes.md; echo; } >"$notes"
+fi
+python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["announcement_github_body"])' "$manifest" >>"$notes"
+
+formula=$(ls "$distrib"/*.rb)
+if [[ -f scripts/formula-extra.rb ]]; then
+  python3 - "$formula" scripts/formula-extra.rb <<'PY'
+import sys
+path, extra = sys.argv[1], open(sys.argv[2]).read().rstrip("\n")
+text = open(path).read().rstrip("\n")
+assert text.endswith("end"), "unexpected formula shape"
+open(path, "w").write(text[:-3].rstrip("\n") + "\n\n" + extra + "\nend\n")
+PY
+fi
 
 say "Tagging $tag"
 run jj tag set "$tag" -r main
@@ -87,19 +142,23 @@ run git push origin "$tag"
 say "Creating the GitHub release"
 # shellcheck disable=SC2086
 run gh release create "$tag" --title "$tag" --notes-file "$notes" $files
+if $dry_run; then
+  echo "  release notes:"
+  sed 's/^/    /' "$notes" | head -30
+fi
 
 say "Publishing to crates.io"
 run cargo publish
 
 say "Updating the Homebrew tap"
-formula=$(ls "$distrib"/*.rb)
 run cp "$formula" "$tap/Formula/"
 if $dry_run; then
   diff -u "$tap/Formula/$(basename "$formula")" "$formula" || true
 else
-  (cd "$tap" && jj describe -m "$name $version" && fish -c push)
+  jj -R "$tap" describe -m "$name $version"
+  (cd "$tap" && fish -c push)
 fi
 
 say "Done: $name $version"
-$dry_run && echo "(dry run: nothing was published)"
+$dry_run && echo "(dry run: nothing was published or changed)"
 echo "Upgrade with: brew update && brew upgrade $name"

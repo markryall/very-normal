@@ -211,11 +211,9 @@ cargo install --path .
 
 ## Release
 
-Bump the version in `Cargo.toml`, push, then:
-
 ```sh
-mise run publish --dry-run   # build everything and show what would happen
-mise run publish             # tag, GitHub release, crates.io, Homebrew tap
+mise run publish 0.3.0 --dry-run   # build everything and show what would happen
+mise run publish 0.3.0             # bump, tag, GitHub release, crates.io, Homebrew tap
 ```
 
 It builds the macOS and Linux binaries on this machine with

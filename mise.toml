@@ -26,5 +26,5 @@ description = "Run clippy"
 run = "cargo clippy -- -D warnings"
 
 [tasks.publish]
-description = "Release the version in Cargo.toml: binaries, GitHub release, crates.io and the Homebrew tap (--dry-run to check)"
+description = "Release a version: binaries, GitHub release, crates.io and the Homebrew tap (usage: mise run publish X.Y.Z [--dry-run])"
 run = "scripts/release"
