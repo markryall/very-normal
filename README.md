@@ -1,9 +1,12 @@
 # very-normal
 
-A terminal typing tutor for moving a ZSA Voyager from QWERTY to the **Very
-Normal** layout a few keys at a time. Very Normal is a layout optimised on
-318k characters of my own typing, with Q, W, Z, X, C and V locked so every Mac
-shortcut stays where it was.
+A terminal typing tutor for moving a keyboard from QWERTY to a new layout a
+few keys at a time, with a bossy coach and checks against your ZSA Oryx
+layout.
+
+It ships with **Very Normal**, a layout optimised on 318k characters of my
+own typing to Claude Code, with Q, W, Z, X, C and V locked so every Mac
+shortcut stays where it was:
 
 ```
 q w y d g   b h a u j
@@ -11,15 +14,19 @@ i l s t m   p n o e r  '
 z x c v k   ; f , . /
 ```
 
-There are nine stages. Each one moves three to five keys, and you only change
-a key's tap in Oryx, so home row mods stay on the same fingers throughout.
+**Want one made from your typing?** See [MAKE_YOUR_OWN.md](MAKE_YOUR_OWN.md).
+It has a prompt that walks Claude Code through building a layout and plan
+from your own transcripts, plus a summary you can share. I'm collecting those
+to see how much layouts vary between people.
 
 ## Use
 
 ```sh
 very-normal                  # the trainer
+very-normal status           # what the coach thinks of your practice today
 very-normal next             # the Oryx edits for the next stage, and the link to make them
 very-normal check            # read the layout from Oryx and compare it with your stage
+very-normal plan             # which plan you're on, and its stages
 very-normal stage 2          # set the stage you're practising
 very-normal baseline 35      # type in a baseline instead of recording one
 very-normal import backup.json   # merge a backup copied out of the web tutor
@@ -35,6 +42,15 @@ In the trainer:
 - `c` checks Oryx and `o` opens the layout there.
 - `k`, `v` and `w` tick the gate's manual boxes.
 
+## The coach
+
+- Aim for 20 minutes a day, in short bursts. It nags until you get there and
+  calls you out for skipping a day.
+- After 15 minutes in a row it tells you to wrap up. After 25, or 45 minutes
+  in a day, it won't start a drill unless you press enter twice.
+- A five-minute pause counts as a break.
+- If your accuracy slides three runs in a row, it sends you off to stretch.
+
 ## The gate
 
 Before climbing a stage:
@@ -44,13 +60,22 @@ Before climbing a stage:
 3. That stage's vim commands used in real editing without fumbling.
 4. A full workday without thinking about the moved keys.
 
+## Plans
+
+A plan is a TOML file listing every stage's 30 keys, with a name, blurb,
+stats, vim commands and drill words for each. See
+[examples/very-normal.toml](examples/very-normal.toml).
+
+very-normal loads `~/.config/very-normal/plan.toml` (or `$VERY_NORMAL_PLAN`),
+and falls back to Very Normal when there isn't one.
+
 ## Where things live
 
 - Progress: `~/.local/share/very-normal/progress.json`, or `$VERY_NORMAL_DATA`.
   The format matches the web tutor's backup text.
-- Oryx layout: `Xx6pM`, or `$VERY_NORMAL_LAYOUT`. Checking uses the GraphQL
-  endpoint Oryx's own page uses, which is undocumented and needs a public
-  layout link.
+- Oryx layout: the plan's `oryx_layout`, or `$VERY_NORMAL_LAYOUT`. Checking
+  uses the GraphQL endpoint Oryx's own page uses, which is undocumented and
+  needs a public layout link.
 - URLs open with `open`, or `$VERY_NORMAL_OPEN` (`{url}` marks the address).
 
 ## Build
