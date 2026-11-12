@@ -208,3 +208,18 @@ mise run test
 mise run lint
 cargo install --path .
 ```
+
+## Release
+
+Bump the version in `Cargo.toml`, push, then:
+
+```sh
+mise run publish --dry-run   # build everything and show what would happen
+mise run publish             # tag, GitHub release, crates.io, Homebrew tap
+```
+
+It builds the macOS and Linux binaries on this machine with
+[dist](https://opensource.axo.dev/cargo-dist/), cross-compiling Linux with
+cargo-zigbuild. It needs `brew install cargo-dist zig cargo-zigbuild` and
+`rustup target add x86_64-apple-darwin x86_64-unknown-linux-gnu
+aarch64-unknown-linux-gnu`. Release notes go in `tmp/release-notes.md`.

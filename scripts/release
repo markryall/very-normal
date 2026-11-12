@@ -1,0 +1,105 @@
+#!/usr/bin/env bash
+# Releases the version in Cargo.toml from this machine: builds binaries for
+# macOS and Linux with dist (cargo-zigbuild cross-compiles Linux), tags it,
+# creates the GitHub release with the binaries and installers, publishes the
+# crate, and pushes the Homebrew formula to the tap.
+#
+#   mise run publish              # do it
+#   mise run publish --dry-run    # build and check everything, publish nothing
+#
+# Needs: dist, zig, cargo-zigbuild, gh, jj, and the rustup targets
+#   rustup target add x86_64-apple-darwin x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu
+# Release notes: put them in tmp/release-notes.md first, or only dist's install
+# instructions are used.
+set -euo pipefail
+
+dry_run=false
+[[ "${1:-}" == "--dry-run" ]] && dry_run=true
+
+cd "$(dirname "$0")/.."
+name=$(sed -n 's/^name = "\(.*\)"/\1/p' Cargo.toml | head -1)
+version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
+tag="v$version"
+tap="${HOMEBREW_TAP_DIR:-$HOME/code/github/markryall/homebrew-tap}"
+distrib=target/distrib
+
+say() { printf '\n==> %s\n' "$*"; }
+fail() { printf 'release: %s\n' "$*" >&2; exit 1; }
+# A release check: stops a real release, only warns in a dry run.
+check() {
+  if $dry_run; then printf '  (dry run) would stop here: %s\n' "$*" >&2; else fail "$*"; fi
+}
+run() {
+  if $dry_run; then printf '  (dry run) %s\n' "$*"; else "$@"; fi
+}
+
+say "Checking $name $version ($tag)"
+for tool in dist zig cargo-zigbuild gh jj; do
+  command -v "$tool" >/dev/null || fail "$tool isn't installed"
+done
+installed=$(rustup target list --installed)
+for t in x86_64-apple-darwin x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu; do
+  grep -qx "$t" <<<"$installed" || fail "missing Rust target $t: rustup target add $t"
+done
+[[ -z "$(jj diff -r @ --summary)" ]] || check "the working copy has changes; describe and push them first"
+[[ "$(jj log --no-graph -r '@-' -T commit_id)" == "$(jj log --no-graph -r main -T commit_id)" ]] ||
+  check "@ isn't on top of main"
+[[ "$(jj log --no-graph -r main -T commit_id)" == "$(jj log --no-graph -r main@origin -T commit_id)" ]] ||
+  check "main isn't pushed; run push first"
+if git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null; then
+  check "$tag is already on GitHub; bump the version in Cargo.toml"
+fi
+[[ -d "$tap/Formula" ]] || fail "no Homebrew tap checkout at $tap (set HOMEBREW_TAP_DIR)"
+[[ -z "$(cd "$tap" && jj diff -r @ --summary)" ]] || check "the tap at $tap has uncommitted changes"
+cargo test --quiet >/dev/null || fail "tests fail"
+
+say "Building every target"
+rm -rf "$distrib"
+dist build --artifacts=all --tag="$tag"
+manifest="$distrib/release-manifest.json"
+dist manifest --artifacts=all --output-format=json --no-local-paths --tag="$tag" >"$manifest"
+files=$(python3 - "$manifest" "$distrib" <<'PY'
+import json, os, sys
+m = json.load(open(sys.argv[1]))
+names = [a for r in m["releases"] for a in r["artifacts"]]
+missing = [n for n in names if not os.path.exists(os.path.join(sys.argv[2], n))]
+if missing:
+    sys.exit("missing artifacts: " + ", ".join(missing))
+print("\n".join(os.path.join(sys.argv[2], n) for n in names))
+PY
+)
+notes=$(mktemp)
+trap 'rm -f "$notes"' EXIT
+[[ -f tmp/release-notes.md ]] && { cat tmp/release-notes.md; echo; } >"$notes"
+python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["announcement_github_body"])' "$manifest" >>"$notes"
+host=$(rustc -vV | sed -n 's/host: //p')
+host_bin=$(mktemp -d)
+tar -xJf "$distrib/$name-$host.tar.xz" -C "$host_bin"
+[[ "$("$host_bin/$name-$host/$name" --version)" == "$name $version" ]] ||
+  fail "the built binary doesn't report $name $version"
+rm -rf "$host_bin"
+if $dry_run; then cargo publish --dry-run --quiet --allow-dirty; else cargo publish --dry-run --quiet; fi
+
+say "Tagging $tag"
+run jj tag set "$tag" -r main
+run git push origin "$tag"
+
+say "Creating the GitHub release"
+# shellcheck disable=SC2086
+run gh release create "$tag" --title "$tag" --notes-file "$notes" $files
+
+say "Publishing to crates.io"
+run cargo publish
+
+say "Updating the Homebrew tap"
+formula=$(ls "$distrib"/*.rb)
+run cp "$formula" "$tap/Formula/"
+if $dry_run; then
+  diff -u "$tap/Formula/$(basename "$formula")" "$formula" || true
+else
+  (cd "$tap" && jj describe -m "$name $version" && fish -c push)
+fi
+
+say "Done: $name $version"
+$dry_run && echo "(dry run: nothing was published)"
+echo "Upgrade with: brew update && brew upgrade $name"

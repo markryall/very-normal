@@ -10,7 +10,7 @@ repository = "https://github.com/markryall/very-normal"
 readme = "README.md"
 keywords = ["cli", "tui", "typing", "keyboard", "zsa"]
 categories = ["command-line-utilities"]
-include = ["src/**", "examples/**", "tests/**", "Cargo.toml", "Cargo.lock", "README.md", "MAKE_YOUR_OWN.md"]
+include = ["/src/**", "/examples/**", "/tests/**", "/Cargo.toml", "/Cargo.lock", "/README.md", "/MAKE_YOUR_OWN.md"]
 
 [dependencies]
 anyhow = "1.0.104"
