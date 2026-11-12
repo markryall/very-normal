@@ -14,11 +14,60 @@ i l s t m   p n o e r  '
 z x c v k   ; f , . /
 ```
 
-**Want one made from your typing?** See [MAKE_YOUR_OWN.md](MAKE_YOUR_OWN.md).
-It has a prompt that walks Claude Code through building a layout and plan
-from your own transcripts, plus a summary you can share. I'm collecting those
-to see how much layouts vary between people. It also takes any other text you wrote
-(`--text notes.md emails.txt`) instead of transcripts.
+## Make your own layout
+
+very-normal can build a layout from your own typing, and a plan of stages
+that gets you there from QWERTY. The first time you run `very-normal`, it
+offers to do this from the messages you've typed to Claude Code. It only
+reads your messages: never Claude's replies, tool output or pastes. Any time
+after that:
+
+```sh
+very-normal make-plan --name "My Layout"
+```
+
+Anything else you've written makes the layout fit you better. `--text` adds
+files, folders of .md, .txt and .org files, or `-` for stdin. `--no-claude`
+leaves your Claude Code messages out:
+
+```sh
+very-normal make-plan --name "My Layout" --text ~/notes ~/Documents/emails.txt
+```
+
+- `--lock` takes keys that stay where QWERTY has them. The default,
+  `qwzxcv,./`, keeps Cmd+Q, W, Z, X, C and V. Each locked key costs the
+  layout a little, and locking nothing is fine too.
+- `--oryx-layout <id>` reads your home row holds from Oryx, if you have a ZSA
+  board.
+- `very-normal make-plan --help` lists the rest.
+
+It takes a few seconds, and nothing leaves your machine. It writes two files
+to `~/.config/very-normal/plans/`, named after your layout:
+
+- `<name>.toml`: your layout and its stages, with drill words from your own
+  writing. Keep it private, and look through the words for names you'd rather
+  not see on screen.
+- `<name>.md`: your layout and how it scores against QWERTY, Colemak-DH,
+  Norman and Very Normal on your typing. It has no words or text in it.
+
+Making a plan never touches the plan you're practising or your progress, so
+rerun it as often as you like with other text, locks or names. Your first
+plan becomes the active one. After that, switch with `very-normal use
+<name>` (`very-normal use very-normal` goes back to the built-in plan). Each
+plan keeps its own progress, so you can switch back and pick up where you
+left off. `very-normal plan` lists the plans you've made.
+
+**Share your layout.** I'm curious how different everyone's layouts turn
+out. `very-normal share` opens a GitHub issue with the summary of the plan
+you made most recently filled in (`very-normal share <name>` for another).
+You can read it, and change it, before you press Submit. The summary also
+says how much the search agreed with itself. It runs 20 times from random
+starting points, and many layouts score almost the same, so some of the
+difference between two people's layouts is chance. The summary shows how
+much.
+
+See [MAKE_YOUR_OWN.md](MAKE_YOUR_OWN.md) for how the layout is scored and
+searched for.
 
 ## Use
 
@@ -28,6 +77,9 @@ very-normal status           # what the coach thinks of your practice today
 very-normal next             # the Oryx edits for the next stage, and the link to make them
 very-normal check            # read the layout from Oryx and compare it with your stage
 very-normal plan             # which plan you're on, and its stages
+very-normal make-plan        # make a layout and plan from your own typing
+very-normal use <name>       # switch plans; each keeps its own progress
+very-normal share [name]     # share a plan's summary (no text) on GitHub
 very-normal keymap kanata    # this stage as a kanata config (or karabiner), for any keyboard
 very-normal stage 2          # set the stage you're practising
 very-normal baseline 35      # type in a baseline instead of recording one
@@ -119,7 +171,10 @@ laptop can live side by side. The kanata config includes a commented
 ## Where things live
 
 - Progress: `~/.local/share/very-normal/progress.json`, or `$VERY_NORMAL_DATA`.
-  The format matches the web tutor's backup text.
+  The format matches the web tutor's backup text. Progress on the plans
+  you're not practising waits in `plans/` next to it.
+- Plans you've made: `~/.config/very-normal/plans/`, next to the active
+  `plan.toml`.
 - Oryx layout: the plan's `oryx_layout`, or `$VERY_NORMAL_LAYOUT`. Checking
   uses the GraphQL endpoint Oryx's own page uses, which is undocumented and
   needs a public layout link.

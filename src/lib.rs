@@ -1,11 +1,14 @@
 pub mod app;
 pub mod charts;
 pub mod coach;
+pub mod corpus;
 pub mod drill;
 pub mod gate;
 pub mod keymap;
 pub mod layout;
+pub mod optimise;
 pub mod oryx;
+pub mod plans;
 pub mod report;
 pub mod store;
 pub mod warmup;

@@ -1,4 +1,4 @@
-use std::io::Read;
+use std::io::{BufRead, IsTerminal, Read, Write};
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, bail};
@@ -6,8 +6,9 @@ use ratatui::DefaultTerminal;
 use ratatui::crossterm::event::{self, Event, KeyEventKind};
 use very_normal::app::App;
 use very_normal::layout;
+use very_normal::optimise::{self, Options};
 use very_normal::store::{self, Progress};
-use very_normal::{charts, coach, keymap, oryx, report};
+use very_normal::{charts, coach, corpus, keymap, oryx, plans, report};
 
 const HELP: &str = "\
 very-normal: walk a ZSA Voyager from QWERTY to the Very Normal layout
@@ -20,6 +21,10 @@ usage: very-normal                  the trainer (TUI)
        very-normal baseline <wpm>   type in a baseline instead of recording one
        very-normal import <file|->  merge a backup copied out of the web tutor
        very-normal plan             which plan you're on, and its stages
+       very-normal make-plan [...]  make a layout and plan from your own typing
+                                    (very-normal make-plan --help for its options)
+       very-normal use <name>       switch plans; each plan keeps its own progress
+       very-normal share [name]     share a plan's summary (no text) on GitHub
        very-normal keymap kanata|karabiner [stage] [--all-keyboards]
                                     a software keymap for keyboards without Oryx
                                     (karabiner: built-in keyboard only, unless --all-keyboards)
@@ -35,8 +40,16 @@ The Oryx layout is Xx6pM ($VERY_NORMAL_LAYOUT); URLs open with `open`
 
 fn main() -> Result<()> {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    let plan_file = layout::install()?;
     let path = store::default_path();
+    if args.is_empty()
+        && !layout::plan_path().exists()
+        && !path.exists()
+        && std::io::stdin().is_terminal()
+        && !welcome(&path)?
+    {
+        return Ok(());
+    }
+    let plan_file = layout::install()?;
     let words: Vec<&str> = args.iter().map(String::as_str).collect();
     match words.as_slice() {
         [] => {
@@ -121,6 +134,29 @@ fn main() -> Result<()> {
             for s in 0..=layout::last() {
                 println!("  {s}: {}  {}", layout::keys_string(s), layout::name(s));
             }
+            let active = plans::active_slug();
+            let others: Vec<String> = plans::list().into_iter().filter(|p| *p != active).collect();
+            if !others.is_empty() {
+                println!(
+                    "\nOther plans: {} (switch with `very-normal use <name>`)",
+                    others.join(", ")
+                );
+            }
+        }
+        ["use", name] => println!("{}", plans::switch(name, &path)?),
+        ["make-plan", "-h" | "--help"] => print!("{}", optimise::USAGE),
+        ["make-plan", rest @ ..] => {
+            let made = optimise::make(&Options::parse(rest)?)?;
+            report_made(&made);
+        }
+        ["share"] => share(&latest_summary()?)?,
+        ["share", name] => {
+            let file = std::path::Path::new(name);
+            if file.is_file() {
+                share(file)?
+            } else {
+                share(&plans::summary_of(&plans::made_path(name)))?
+            }
         }
         ["keymap", kind, rest @ ..] => {
             let all = rest.contains(&"--all-keyboards");
@@ -167,6 +203,149 @@ fn main() -> Result<()> {
         }
     }
     Ok(())
+}
+
+/// The first run, with no plan and no progress yet: offers to make a layout
+/// from your own typing. Says whether to carry on into the trainer.
+fn welcome(progress: &std::path::Path) -> Result<bool> {
+    let projects = corpus::claude_projects();
+    let typed = corpus::typed_messages(&projects).len();
+    println!("Welcome to very-normal.\n");
+    println!("very-normal can make you a keyboard layout from your own typing, and a plan");
+    println!("that moves you there from QWERTY a few keys at a time.\n");
+    let enough = typed >= optimise::ENOUGH;
+    if enough {
+        println!(
+            "It found {typed} messages you typed to Claude Code in {}.",
+            projects.display()
+        );
+        println!("(Only your messages: never Claude's replies, tool output or pastes.)\n");
+    } else {
+        println!(
+            "It found {typed} messages you typed to Claude Code in {}; it needs {} or more.\n",
+            projects.display(),
+            optimise::ENOUGH
+        );
+    }
+    println!("Anything else you've written makes the layout fit you better. Add files or");
+    println!("folders of .md, .txt or .org files (and `--no-claude` to leave Claude Code out):\n");
+    println!("  very-normal make-plan --text ~/notes ~/Documents/emails.txt\n");
+    if enough {
+        println!("  1  make my layout from my Claude Code messages now (about a minute)");
+    }
+    println!("  2  use Very Normal, the built-in layout, for now");
+    println!("  q  quit, and come back with make-plan\n");
+    let choice = ask(if enough {
+        "Choose [1]: "
+    } else {
+        "Choose [2]: "
+    })?;
+    let choice = match choice.as_str() {
+        "" if enough => "1",
+        "" => "2",
+        c => c,
+    };
+    match choice {
+        "1" if enough => {
+            let name = ask("What should your layout be called? [My Layout]: ")?;
+            let mut o = Options::default();
+            if !name.is_empty() {
+                o.name = name;
+            }
+            println!();
+            let made = optimise::make(&o)?;
+            report_made(&made);
+            if ask("\nShare your summary on GitHub? It has no text or words, just the layout and its scores. [y/N]: ")?
+                .eq_ignore_ascii_case("y")
+            {
+                share(&made.summary_path)?;
+            }
+            Ok(ask("\nPress enter to start training, or q to quit: ")? != "q")
+        }
+        "2" => {
+            Progress::default().save(progress)?;
+            Ok(true)
+        }
+        _ => Ok(false),
+    }
+}
+
+fn ask(prompt: &str) -> Result<String> {
+    print!("{prompt}");
+    std::io::stdout().flush()?;
+    let mut line = String::new();
+    std::io::stdin().lock().read_line(&mut line)?;
+    Ok(line.trim().to_string())
+}
+
+fn report_made(made: &optimise::Made) {
+    println!("{}", made.summary);
+    println!(
+        "Your plan ({} stages) is in {}. Its drill words come from your own writing,",
+        made.stages,
+        made.plan_path.display()
+    );
+    println!("so keep it private, and look through them for names you'd rather not see on screen.");
+    println!(
+        "The summary in {} has no words or text in it.\n",
+        made.summary_path.display()
+    );
+    if !made.name_ideas.is_empty() {
+        println!(
+            "Name ideas you can type on your new home row: {}",
+            made.name_ideas.join(", ")
+        );
+        println!("(Run make-plan again with --name; the same seed gives the same layout.)\n");
+    }
+    if made.activated {
+        println!("It's the plan you're practising now.");
+    } else {
+        println!("Your current plan and progress are untouched. To practise this one:");
+        println!("  very-normal use {}", made.slug);
+        println!("Each plan keeps its own progress, so you can switch back any time.\n");
+    }
+    println!("Next: `very-normal plan` to see the stages, `very-normal` to start training,");
+    println!("and `very-normal share` to add your layout to the collection. I'm curious how");
+    println!("much everyone's layouts differ.");
+}
+
+/// The summary of the plan you made most recently.
+fn latest_summary() -> Result<std::path::PathBuf> {
+    std::fs::read_dir(plans::dir())
+        .into_iter()
+        .flatten()
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| p.extension().is_some_and(|e| e == "md"))
+        .max_by_key(|p| std::fs::metadata(p).and_then(|m| m.modified()).ok())
+        .ok_or_else(|| {
+            anyhow::anyhow!("no summary to share; make a plan first with `very-normal make-plan`")
+        })
+}
+
+/// Opens a new GitHub issue with the summary filled in, for you to check and post.
+fn share(summary: &std::path::Path) -> Result<()> {
+    let text = std::fs::read_to_string(summary).with_context(|| {
+        format!(
+            "reading {}; make a plan first with `very-normal make-plan`",
+            summary.display()
+        )
+    })?;
+    let url = optimise::share_url(&text);
+    if url.len() > optimise::LONGEST_LINK {
+        println!(
+            "The summary is too long for a link. Open this page and paste in {}:",
+            summary.display()
+        );
+        let short = optimise::share_url(text.lines().next().unwrap_or("# My layout"));
+        println!("{short}");
+        return very_normal::open_url(&short);
+    }
+    println!(
+        "Opening a new issue with your summary filled in. Nothing is posted until you press Submit."
+    );
+    println!("{url}");
+    very_normal::open_url(&url)
 }
 
 fn now_ms() -> Result<u64> {

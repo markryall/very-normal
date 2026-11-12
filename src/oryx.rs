@@ -103,6 +103,37 @@ impl std::fmt::Display for Finding {
 }
 
 pub fn fetch(layout: &str) -> Result<Snapshot> {
+    parse(&query(layout)?)
+}
+
+/// What each of the ten home row keys does when held, as a plan's
+/// `home_row_mods` ("ctrl", "alt", "cmd", "shift" or "").
+pub fn home_row_mods(layout: &str) -> Result<Vec<String>> {
+    holds_of(&query(layout)?)
+}
+
+fn holds_of(v: &Value) -> Result<Vec<String>> {
+    let main = main_layer(v)?;
+    Ok((10..20)
+        .map(|i| {
+            let hold = code(&main[SLOTS[i]], "hold");
+            let m = if hold.ends_with("CTRL") {
+                "ctrl"
+            } else if hold.ends_with("ALT") {
+                "alt"
+            } else if hold.ends_with("GUI") {
+                "cmd"
+            } else if hold.ends_with("SHIFT") {
+                "shift"
+            } else {
+                ""
+            };
+            m.to_string()
+        })
+        .collect())
+}
+
+fn query(layout: &str) -> Result<Value> {
     if layout.is_empty() {
         bail!("no Oryx layout: set oryx_layout in your plan, or $VERY_NORMAL_LAYOUT");
     }
@@ -122,9 +153,43 @@ pub fn fetch(layout: &str) -> Result<Snapshot> {
             String::from_utf8_lossy(&out.stderr).trim()
         );
     }
-    let v: Value =
-        serde_json::from_slice(&out.stdout).context("Oryx sent something that isn't JSON")?;
-    parse(&v)
+    serde_json::from_slice(&out.stdout).context("Oryx sent something that isn't JSON")
+}
+
+fn layout_of(v: &Value) -> Result<&Value> {
+    v.pointer("/data/layout")
+        .filter(|l| !l.is_null())
+        .ok_or_else(|| anyhow!("Oryx didn't return that layout. Is its link public?"))
+}
+
+fn keys_of(layer: &Value) -> Vec<Value> {
+    layer
+        .get("keys")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default()
+}
+
+fn layers_of(v: &Value) -> Result<&Vec<Value>> {
+    layout_of(v)?
+        .pointer("/revision/layers")
+        .and_then(Value::as_array)
+        .ok_or_else(|| anyhow!("the layout has no layers"))
+}
+
+fn main_layer(v: &Value) -> Result<Vec<Value>> {
+    let main = layers_of(v)?
+        .iter()
+        .find(|l| l.get("position").and_then(Value::as_u64) == Some(0))
+        .map(keys_of)
+        .ok_or_else(|| anyhow!("the layout has no main layer"))?;
+    if main.len() < 43 {
+        bail!(
+            "the main layer has {} keys; is this a Voyager layout?",
+            main.len()
+        );
+    }
+    Ok(main)
 }
 
 fn code(key: &Value, part: &str) -> String {
@@ -150,32 +215,9 @@ fn character(key: &Value) -> char {
 }
 
 pub fn parse(v: &Value) -> Result<Snapshot> {
-    let layout = v
-        .pointer("/data/layout")
-        .filter(|l| !l.is_null())
-        .ok_or_else(|| anyhow!("Oryx didn't return that layout. Is its link public?"))?;
-    let layers = layout
-        .pointer("/revision/layers")
-        .and_then(Value::as_array)
-        .ok_or_else(|| anyhow!("the layout has no layers"))?;
-    let keys_of = |layer: &Value| {
-        layer
-            .get("keys")
-            .and_then(Value::as_array)
-            .cloned()
-            .unwrap_or_default()
-    };
-    let main = layers
-        .iter()
-        .find(|l| l.get("position").and_then(Value::as_u64) == Some(0))
-        .map(keys_of)
-        .ok_or_else(|| anyhow!("the layout has no main layer"))?;
-    if main.len() < 43 {
-        bail!(
-            "the main layer has {} keys; is this a Voyager layout?",
-            main.len()
-        );
-    }
+    let layout = layout_of(v)?;
+    let layers = layers_of(v)?;
+    let main = main_layer(v)?;
     let mirror = layers
         .iter()
         .find(|l| {
@@ -299,6 +341,19 @@ mod tests {
         assert_eq!(
             mirror,
             layout::changes(2).iter().filter(|c| c.right_hand()).count()
+        );
+    }
+
+    #[test]
+    fn reads_home_row_mods_for_a_new_plan() {
+        let path = format!(
+            "{}/tests/fixtures/oryx-stage1.json",
+            env!("CARGO_MANIFEST_DIR")
+        );
+        let v: Value = serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+        assert_eq!(
+            holds_of(&v).unwrap(),
+            ["", "ctrl", "alt", "cmd", "", "", "cmd", "alt", "ctrl", ""]
         );
     }
 
