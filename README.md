@@ -14,6 +14,14 @@ i l s t m   p n o e r  '
 z x c v k   ; f , . /
 ```
 
+## Install
+
+```sh
+brew install markryall/tap/very-normal
+# or
+cargo install very-normal
+```
+
 ## Make your own layout
 
 very-normal can build a layout from your own typing, and a plan of stages
@@ -181,7 +189,8 @@ laptop can live side by side. The kanata config includes a commented
 - Oryx layout: the plan's `oryx_layout`, or `$VERY_NORMAL_LAYOUT`. Checking
   uses the GraphQL endpoint Oryx's own page uses, which is undocumented and
   needs a public layout link.
-- URLs open with `open`, or `$VERY_NORMAL_OPEN` (`{url}` marks the address).
+- URLs open with `open` (`xdg-open` on Linux), or `$VERY_NORMAL_OPEN` (`{url}`
+  marks the address).
 
 ## Build
 

@@ -1,9 +1,9 @@
 [package]
 name = "very-normal"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 authors = ["Mark Ryall"]
-description = "A terminal typing tutor that walks a ZSA Voyager from QWERTY to the Very Normal layout, a few keys at a time"
+description = "A terminal typing tutor that makes a keyboard layout from your own typing and moves you to it from QWERTY a few keys at a time"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/markryall/very-normal"
 readme = "README.md"

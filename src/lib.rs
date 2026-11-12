@@ -14,9 +14,14 @@ pub mod store;
 pub mod warmup;
 
 /// Opens a URL with `$VERY_NORMAL_OPEN` (a command, `{url}` marks where the
-/// address goes), or with macOS `open`.
+/// address goes), or with `open` (`xdg-open` on Linux).
 pub fn open_url(url: &str) -> anyhow::Result<()> {
-    let template = std::env::var("VERY_NORMAL_OPEN").unwrap_or_else(|_| "open {url}".to_string());
+    let default = if cfg!(target_os = "linux") {
+        "xdg-open {url}"
+    } else {
+        "open {url}"
+    };
+    let template = std::env::var("VERY_NORMAL_OPEN").unwrap_or_else(|_| default.to_string());
     let mut parts: Vec<String> = template.split_whitespace().map(str::to_string).collect();
     if !parts.iter().any(|p| p.contains("{url}")) {
         parts.push("{url}".into());

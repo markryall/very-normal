@@ -11,7 +11,7 @@ use very_normal::store::{self, Progress};
 use very_normal::{charts, coach, corpus, keymap, oryx, plans, report};
 
 const HELP: &str = "\
-very-normal: walk a ZSA Voyager from QWERTY to the Very Normal layout
+very-normal: move your keyboard from QWERTY to a layout made from your own typing
 
 usage: very-normal                  the trainer (TUI)
        very-normal status           what the coach thinks of your practice today
@@ -35,8 +35,9 @@ usage: very-normal                  the trainer (TUI)
        very-normal --help | --version
 
 Progress lives in ~/.local/share/very-normal/progress.json ($VERY_NORMAL_DATA).
-The Oryx layout is Xx6pM ($VERY_NORMAL_LAYOUT); URLs open with `open`
-($VERY_NORMAL_OPEN, where {url} marks the address).
+Plans live in ~/.config/very-normal ($VERY_NORMAL_PLAN). The Oryx layout comes
+from your plan ($VERY_NORMAL_LAYOUT); URLs open with `open`, or `xdg-open` on
+Linux ($VERY_NORMAL_OPEN, where {url} marks the address).
 ";
 
 fn main() -> Result<()> {

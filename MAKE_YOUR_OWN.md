@@ -5,7 +5,7 @@ different. very-normal can build a layout from what *you* type, split the
 move from QWERTY into small stages, and drill you through them.
 
 ```sh
-cargo install very-normal
+brew install markryall/tap/very-normal   # or: cargo install very-normal
 very-normal                  # the first run offers to make your layout
 very-normal make-plan --name "My Layout" --text ~/notes   # or do it any time
 very-normal use my-layout    # switch to it; your progress on each plan is kept
