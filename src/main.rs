@@ -7,7 +7,7 @@ use ratatui::crossterm::event::{self, Event, KeyEventKind};
 use very_normal::app::App;
 use very_normal::layout;
 use very_normal::store::{self, Progress};
-use very_normal::{coach, oryx, report};
+use very_normal::{coach, keymap, oryx, report};
 
 const HELP: &str = "\
 very-normal: walk a ZSA Voyager from QWERTY to the Very Normal layout
@@ -20,6 +20,8 @@ usage: very-normal                  the trainer (TUI)
        very-normal baseline <wpm>   type in a baseline instead of recording one
        very-normal import <file|->  merge a backup copied out of the web tutor
        very-normal plan             which plan you're on, and its stages
+       very-normal keymap kanata|karabiner [stage]
+                                    a software keymap for keyboards without Oryx
        very-normal export           print your progress as JSON
        very-normal --help | --version
 
@@ -118,6 +120,21 @@ fn main() -> Result<()> {
             }
             for s in 0..=layout::last() {
                 println!("  {s}: {}  {}", layout::keys_string(s), layout::name(s));
+            }
+        }
+        ["keymap", kind, rest @ ..] => {
+            let stage = match rest {
+                [] => Progress::load(&path)?.stage,
+                [n] => n.parse().context("the stage is a number")?,
+                _ => bail!("usage: very-normal keymap kanata|karabiner [stage]"),
+            };
+            if stage > layout::last() {
+                bail!("there are only stages 0 to {}", layout::last());
+            }
+            match *kind {
+                "kanata" => print!("{}", keymap::kanata(stage)),
+                "karabiner" => print!("{}", keymap::karabiner(stage)),
+                other => bail!("no {other} keymap; try kanata or karabiner"),
             }
         }
         ["export"] => println!("{}", serde_json::to_string_pretty(&Progress::load(&path)?)?),

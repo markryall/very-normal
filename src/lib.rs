@@ -2,6 +2,7 @@ pub mod app;
 pub mod coach;
 pub mod drill;
 pub mod gate;
+pub mod keymap;
 pub mod layout;
 pub mod oryx;
 pub mod report;

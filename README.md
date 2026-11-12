@@ -28,6 +28,7 @@ very-normal status           # what the coach thinks of your practice today
 very-normal next             # the Oryx edits for the next stage, and the link to make them
 very-normal check            # read the layout from Oryx and compare it with your stage
 very-normal plan             # which plan you're on, and its stages
+very-normal keymap kanata    # this stage as a kanata config (or karabiner), for any keyboard
 very-normal stage 2          # set the stage you're practising
 very-normal baseline 35      # type in a baseline instead of recording one
 very-normal import backup.json   # merge a backup copied out of the web tutor
@@ -75,6 +76,16 @@ stats, vim commands and drill words for each. See
 
 very-normal loads `~/.config/very-normal/plan.toml` (or `$VERY_NORMAL_PLAN`),
 and falls back to Very Normal when there isn't one.
+
+## Any keyboard
+
+Oryx is only one way to get a stage onto a keyboard. `very-normal keymap
+kanata` prints the current stage as a [kanata](https://github.com/jtroo/kanata)
+config (macOS, Linux, Windows), and `very-normal keymap karabiner` prints a
+[Karabiner-Elements](https://karabiner-elements.pqrs.org) complex modification
+for `~/.config/karabiner/assets/complex_modifications/`. Add a stage number to
+get a different one. Both remap in software and expect the keyboard to send
+QWERTY, so don't use them on a board whose firmware already has the stage.
 
 ## Where things live
 
