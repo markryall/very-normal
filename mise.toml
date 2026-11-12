@@ -1,0 +1,26 @@
+[tools]
+rust = "stable"
+
+[tasks.build]
+description = "Build (debug)"
+run = "cargo build"
+
+[tasks.release]
+description = "Build (release)"
+run = "cargo build --release"
+
+[tasks.test]
+description = "Run tests"
+run = "cargo test"
+
+[tasks.check]
+description = "Type-check without building"
+run = "cargo check"
+
+[tasks.prettier]
+description = "Format code"
+run = "cargo fmt"
+
+[tasks.lint]
+description = "Run clippy"
+run = "cargo clippy -- -D warnings"

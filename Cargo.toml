@@ -1,0 +1,17 @@
+[package]
+name = "very-normal"
+version = "0.1.0"
+edition = "2024"
+authors = ["Mark Ryall"]
+description = "A terminal typing tutor that walks a ZSA Voyager from QWERTY to the Very Normal layout, a few keys at a time"
+license = "MIT OR Apache-2.0"
+readme = "README.md"
+keywords = ["cli", "tui", "typing", "keyboard", "zsa"]
+categories = ["command-line-utilities"]
+
+[dependencies]
+anyhow = "1.0.104"
+chrono = { version = "0.4.45", default-features = false, features = ["clock", "std"] }
+ratatui = "0.30.2"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
