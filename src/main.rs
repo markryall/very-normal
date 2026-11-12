@@ -20,8 +20,9 @@ usage: very-normal                  the trainer (TUI)
        very-normal baseline <wpm>   type in a baseline instead of recording one
        very-normal import <file|->  merge a backup copied out of the web tutor
        very-normal plan             which plan you're on, and its stages
-       very-normal keymap kanata|karabiner [stage]
+       very-normal keymap kanata|karabiner [stage] [--all-keyboards]
                                     a software keymap for keyboards without Oryx
+                                    (karabiner: built-in keyboard only, unless --all-keyboards)
        very-normal export           print your progress as JSON
        very-normal --help | --version
 
@@ -123,17 +124,22 @@ fn main() -> Result<()> {
             }
         }
         ["keymap", kind, rest @ ..] => {
-            let stage = match rest {
+            let all = rest.contains(&"--all-keyboards");
+            let stage = match rest
+                .iter()
+                .filter(|a| **a != "--all-keyboards")
+                .collect::<Vec<_>>()[..]
+            {
                 [] => Progress::load(&path)?.stage,
                 [n] => n.parse().context("the stage is a number")?,
-                _ => bail!("usage: very-normal keymap kanata|karabiner [stage]"),
+                _ => bail!("usage: very-normal keymap kanata|karabiner [stage] [--all-keyboards]"),
             };
             if stage > layout::last() {
                 bail!("there are only stages 0 to {}", layout::last());
             }
             match *kind {
                 "kanata" => print!("{}", keymap::kanata(stage)),
-                "karabiner" => print!("{}", keymap::karabiner(stage)),
+                "karabiner" => print!("{}", keymap::karabiner(stage, all)),
                 other => bail!("no {other} keymap; try kanata or karabiner"),
             }
         }

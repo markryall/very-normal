@@ -1,8 +1,10 @@
 //! Software keymaps for a stage, for keyboards without Oryx: kanata (macOS,
 //! Linux, Windows) and Karabiner-Elements (macOS).
 //!
-//! Both assume the keyboard itself still sends QWERTY. Don't use them on a
-//! board whose firmware already has the stage, or the keys move twice.
+//! Both assume the keyboard itself still sends QWERTY. A keyboard whose
+//! firmware already has the stage must be left out, or its keys move twice:
+//! the Karabiner rule only touches the built-in keyboard unless asked
+//! otherwise, and the kanata config shows how to pick devices.
 
 use serde_json::json;
 
@@ -34,8 +36,14 @@ pub fn kanata(stage: usize) -> String {
     let keys: String = layout::keys(stage).into_iter().collect();
     format!(
         ";; very-normal: {}\n\
-         ;; The keyboard must send QWERTY; don't also remap it in firmware.\n\
-         (defcfg process-unmapped-keys yes)\n\
+         ;; This remaps every keyboard kanata grabs. Leave out any keyboard whose\n\
+         ;; firmware already has the stage (a remapped Voyager), or its keys move twice.\n\
+         ;; On macOS, uncomment the line below to grab only the built-in keyboard.\n\
+         ;; On Linux use linux-dev to list devices; on Windows, kanata's interception build.\n\
+         (defcfg\n  \
+           process-unmapped-keys yes\n  \
+           ;; macos-dev-names-include (\"Apple Internal Keyboard / Trackpad\")\n\
+         )\n\
          (defsrc {})\n\
          (deflayer stage{stage} {})\n",
         header(stage),
@@ -56,21 +64,36 @@ fn key_code(c: char) -> String {
 }
 
 /// A complex modification for `~/.config/karabiner/assets/complex_modifications/`.
-pub fn karabiner(stage: usize) -> String {
+/// Unless `all_keyboards`, it only applies to the Mac's built-in keyboard, so
+/// an external keyboard that already has the stage in firmware is left alone.
+pub fn karabiner(stage: usize, all_keyboards: bool) -> String {
+    let built_in = json!([{
+        "type": "device_if",
+        "identifiers": [{ "is_built_in_keyboard": true }],
+    }]);
     let manipulators: Vec<_> = remaps(stage)
         .into_iter()
         .map(|(from, to)| {
-            json!({
+            let mut m = json!({
                 "type": "basic",
                 "from": { "key_code": key_code(from), "modifiers": { "optional": ["any"] } },
                 "to": [{ "key_code": key_code(to) }],
-            })
+            });
+            if !all_keyboards {
+                m["conditions"] = built_in.clone();
+            }
+            m
         })
         .collect();
+    let which = if all_keyboards {
+        "every keyboard; each must send QWERTY"
+    } else {
+        "built-in keyboard only"
+    };
     let doc = json!({
         "title": format!("very-normal: {}", layout::plan().name),
         "rules": [{
-            "description": format!("{} (the keyboard must send QWERTY)", header(stage)),
+            "description": format!("{} ({which})", header(stage)),
             "manipulators": manipulators,
         }],
     });
@@ -92,16 +115,21 @@ mod tests {
 
     #[test]
     fn karabiner_only_remaps_what_moved() {
-        let v: serde_json::Value = serde_json::from_str(&karabiner(1)).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&karabiner(1, false)).unwrap();
         let m = v["rules"][0]["manipulators"].as_array().unwrap();
         assert_eq!(m.len(), 4);
+        assert_eq!(
+            m[0]["conditions"][0]["identifiers"][0]["is_built_in_keyboard"],
+            true
+        );
         assert_eq!(m[0]["from"]["key_code"], "e");
         assert_eq!(m[0]["to"][0]["key_code"], "l");
     }
 
     #[test]
     fn karabiner_names_punctuation() {
-        let v: serde_json::Value = serde_json::from_str(&karabiner(layout::last())).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&karabiner(layout::last(), true)).unwrap();
+        assert!(v["rules"][0]["manipulators"][0].get("conditions").is_none());
         let codes: Vec<&str> = v["rules"][0]["manipulators"]
             .as_array()
             .unwrap()
