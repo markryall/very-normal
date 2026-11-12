@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Make a very-normal plan from your own Claude Code transcripts.
+"""Make a very-normal plan from your own typing.
 
-Reads what you typed to Claude Code (never Claude's replies or tool output),
-optimises a keyboard layout for it, splits the move from QWERTY into small
-stages, picks drill words from your own vocabulary, and writes:
+By default it reads what you typed to Claude Code (never Claude's replies or
+tool output). Pass --text to use any other text you wrote instead: notes,
+emails, a blog, chat exports. Then it optimises a keyboard layout for it,
+splits the move from QWERTY into small stages, picks drill words from your own vocabulary, and writes:
 
   - a plan file for very-normal (keep it private: the drill words are yours)
   - a summary you can share: your layout, how it scores, and how QWERTY,
@@ -75,6 +76,19 @@ def typed_messages(projects):
                 if len(c) > 2000:
                     continue
                 out.append(c)
+    return out
+
+
+def text_messages(paths):
+    """Plain text from files (or `-` for stdin), split into paragraphs."""
+    out = []
+    for path in paths:
+        if path == "-":
+            body = sys.stdin.read()
+        else:
+            with open(path, errors="ignore") as f:
+                body = f.read()
+        out += [p.strip() for p in re.split(r"\n\s*\n", body) if p.strip()]
     return out
 
 
@@ -289,6 +303,7 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--name", required=True, help="what to call your layout")
     ap.add_argument("--projects", default=os.path.expanduser("~/.claude/projects"), help="Claude Code transcripts folder")
+    ap.add_argument("--text", nargs="+", metavar="FILE", help="use these text files (or - for stdin) instead of Claude Code transcripts")
     ap.add_argument("--lock", default="qwzxcv,./", help="keys that stay where QWERTY has them (default keeps Mac shortcuts)")
     ap.add_argument("--oryx-layout", default="", help="your Oryx layout id, if you have a ZSA board")
     ap.add_argument("--home-row-mods", default="", help='ten comma-separated holds, e.g. ",ctrl,alt,cmd,,,cmd,alt,ctrl,"')
@@ -301,9 +316,10 @@ def main():
     ap.add_argument("--corpus-out", help="also save the extracted text here (keep it private)")
     args = ap.parse_args()
 
-    msgs = typed_messages(args.projects)
+    msgs = text_messages(args.text) if args.text else typed_messages(args.projects)
+    source = ", ".join(args.text) if args.text else args.projects
     if len(msgs) < 200:
-        sys.exit(f"only {len(msgs)} typed messages found in {args.projects}; that's too few to optimise for")
+        sys.exit(f"only {len(msgs)} messages or paragraphs found in {source}; that's too few to optimise for")
     raw = "\n".join(msgs)
     letters = sum(ch.isalpha() for ch in raw)
     upper = 100 * sum(ch.isupper() for ch in raw) / max(letters, 1)
