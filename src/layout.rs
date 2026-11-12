@@ -17,6 +17,17 @@ pub const EXAMPLE: &str = include_str!("../examples/very-normal.toml");
 pub const OUTER_LEFT: [&str; 3] = ["tab", "esc", "shf"];
 pub const OUTER_RIGHT: [&str; 3] = ["bsp", "'", "ent"];
 
+/// The outer key on the right of a row. Beside the home row it's the quote,
+/// unless the plan's 30 keys take the quote in (as Dvorak's do); then it
+/// holds whatever they leave out.
+pub fn outer_right(row: usize) -> String {
+    if row == 1 {
+        let stage0: String = keys(0).into_iter().collect();
+        return crate::named::left_out(&stage0).to_string();
+    }
+    OUTER_RIGHT[row].to_string()
+}
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct Plan {
     pub name: String,

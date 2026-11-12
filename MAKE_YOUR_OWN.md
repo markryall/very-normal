@@ -2,7 +2,8 @@
 
 Very Normal was optimised on one person's typing. Yours is probably a bit
 different. very-normal can build a layout from what *you* type, split the
-move from QWERTY into small stages, and drill you through them.
+move from the layout you type on now (QWERTY, Dvorak, Colemak, Colemak-DH,
+Workman, Norman or your own) into small stages, and drill you through them.
 
 ```sh
 brew install markryall/tap/very-normal   # or: cargo install very-normal
@@ -32,10 +33,11 @@ The summary holds no words or text from your writing. It has:
 - how much you studied (messages and characters), and where it came from
   (Claude Code messages, other writing, or both), but not file names
 - how often you type each of the 30 keys
-- how your layout, QWERTY, Colemak-DH, Norman and Very Normal score on your
-  typing
-- the stages from QWERTY to your layout: which keys each one moves, and
-  how much of your typing lands on the home row along the way
+- the layout you started from
+- how your layout, where you started, QWERTY, Dvorak, Colemak, Colemak-DH,
+  Workman, Norman and Very Normal score on your typing
+- the stages from where you started to your layout: which keys each one
+  moves, and how much of your typing lands on the home row along the way
 - every restart of the search, with its layout and score, and how many keys
   all of them agreed on
 
@@ -65,9 +67,9 @@ run, make-plan suggests some from your own vocabulary. Run it again with
    along a row. All three rows are scored for an ortholinear board; the
    quote key and outer columns stay put.
 3. **Searches with simulated annealing**, 20 restarts in parallel from
-   shuffles of QWERTY, with your locked keys pinned. It trains on 80% of
-   your messages and scores on the other 20%, so the summary's table shows
-   how the layout does on typing it never saw.
+   shuffles of the layout you type on now, with your locked keys pinned. It
+   trains on 80% of your messages and scores on the other 20%, so the
+   summary's table shows how the layout does on typing it never saw.
 4. **Builds the ladder.** It swaps one letter into its final key at a time,
    most-typed letters first, and groups the swaps two to a stage. The home
    row fills up in the first few stages.

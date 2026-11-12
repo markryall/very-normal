@@ -1,23 +1,34 @@
 //! Software keymaps for a stage, for keyboards without Oryx: kanata (macOS,
 //! Linux, Windows) and Karabiner-Elements (macOS).
 //!
-//! Both assume the keyboard itself still sends QWERTY. A keyboard whose
+//! Both assume the keyboard itself sends QWERTY and the computer is set to
+//! the U.S. (QWERTY) layout: they make the whole layout themselves, whatever
+//! you started from. When a plan's 30 keys take in the quote (as Dvorak's
+//! do), the quote key beside the home row types what they left out. A keyboard whose
 //! firmware already has the stage must be left out, or its keys move twice:
 //! the Karabiner rule only touches the built-in keyboard unless asked
 //! otherwise, and the kanata config shows how to pick devices.
 
 use serde_json::json;
 
-use crate::layout;
+use crate::{layout, named};
 
 /// The physical key at each position, as the OS sees it.
 const PHYSICAL: &str = "qwertyuiopasdfghjkl;zxcvbnm,./";
 
-/// Positions where this stage types something other than the physical key.
+/// Every key this stage sets: the 30, and the quote key beside the home
+/// row, which types whatever the 30 leave out.
+fn keys(stage: usize) -> Vec<(char, char)> {
+    let mut out: Vec<(char, char)> = PHYSICAL.chars().zip(layout::keys(stage)).collect();
+    let stage_keys: String = layout::keys(stage).into_iter().collect();
+    out.push(('\'', named::left_out(&stage_keys)));
+    out
+}
+
+/// Keys where this stage types something other than the physical key.
 fn remaps(stage: usize) -> Vec<(char, char)> {
-    PHYSICAL
-        .chars()
-        .zip(layout::keys(stage))
+    keys(stage)
+        .into_iter()
         .filter(|(from, to)| from != to)
         .collect()
 }
@@ -32,14 +43,16 @@ fn header(stage: usize) -> String {
 }
 
 pub fn kanata(stage: usize) -> String {
-    let spaced = |s: &str| s.chars().map(String::from).collect::<Vec<_>>().join(" ");
-    let keys: String = layout::keys(stage).into_iter().collect();
+    let all = keys(stage);
+    let from: Vec<String> = all.iter().map(|(f, _)| f.to_string()).collect();
+    let to: Vec<String> = all.iter().map(|(_, t)| t.to_string()).collect();
     format!(
         ";; very-normal: {}\n\
          ;; This remaps every keyboard kanata grabs. Leave out any keyboard whose\n\
          ;; firmware already has the stage (a remapped Voyager), or its keys move twice.\n\
          ;; On macOS, uncomment the line below to grab only the built-in keyboard.\n\
          ;; On Linux use linux-dev to list devices; on Windows, kanata's interception build.\n\
+         ;; Set the computer to the U.S. (QWERTY) layout: this makes the whole layout itself.\n\
          (defcfg\n  \
            process-unmapped-keys yes\n  \
            ;; macos-dev-names-include (\"Apple Internal Keyboard / Trackpad\")\n\
@@ -47,8 +60,8 @@ pub fn kanata(stage: usize) -> String {
          (defsrc {})\n\
          (deflayer stage{stage} {})\n",
         header(stage),
-        spaced(PHYSICAL),
-        spaced(&keys),
+        from.join(" "),
+        to.join(" "),
     )
 }
 
@@ -107,9 +120,11 @@ mod tests {
     #[test]
     fn kanata_maps_every_key_to_the_stage() {
         let k = kanata(1);
-        assert!(k.contains("(defsrc q w e r t y u i o p a s d f g h j k l ; z x c v b n m , . /)"));
+        assert!(
+            k.contains("(defsrc q w e r t y u i o p a s d f g h j k l ; z x c v b n m , . / ')")
+        );
         assert!(k.contains(
-            "(deflayer stage1 q w l r f y u i o p a s d t g h j k e ; z x c v b n m , . /)"
+            "(deflayer stage1 q w l r f y u i o p a s d t g h j k e ; z x c v b n m , . / ')"
         ));
     }
 

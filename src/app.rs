@@ -532,7 +532,7 @@ impl App {
                 }
             }
             spans.push(Span::styled(
-                format!(" {}", layout::OUTER_RIGHT[row]),
+                format!(" {}", layout::outer_right(row)),
                 dim(),
             ));
             lines.push(Line::from(spans));

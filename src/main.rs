@@ -8,10 +8,10 @@ use very_normal::app::App;
 use very_normal::layout;
 use very_normal::optimise::{self, Options};
 use very_normal::store::{self, Progress};
-use very_normal::{charts, coach, corpus, keymap, oryx, plans, report};
+use very_normal::{charts, coach, corpus, keymap, named, oryx, plans, report};
 
 const HELP: &str = "\
-very-normal: move your keyboard from QWERTY to a layout made from your own typing
+very-normal: move your keyboard to a layout made from your own typing
 
 usage: very-normal                  the trainer (TUI)
        very-normal status           what the coach thinks of your practice today
@@ -215,7 +215,7 @@ fn welcome(progress: &std::path::Path) -> Result<bool> {
     let typed = corpus::typed_messages(&projects).len();
     println!("Welcome to very-normal.\n");
     println!("very-normal can make you a keyboard layout from your own typing, and a plan");
-    println!("that moves you there from QWERTY a few keys at a time.\n");
+    println!("that moves you there from the layout you type on now, a few keys at a time.\n");
     let enough = typed >= optimise::ENOUGH;
     if enough {
         println!(
@@ -232,11 +232,11 @@ fn welcome(progress: &std::path::Path) -> Result<bool> {
     }
     println!("Anything else you've written makes the layout fit you better. Add files or");
     println!("folders of .md, .txt or .org files (and `--no-claude` to leave Claude Code out):\n");
-    println!("  very-normal make-plan --text ~/notes ~/Documents/emails.txt\n");
+    println!("  very-normal make-plan --from dvorak --text ~/notes ~/Documents/emails.txt\n");
     if enough {
         println!("  1  make my layout from my Claude Code messages now (about a minute)");
     }
-    println!("  2  use Very Normal, the built-in layout, for now");
+    println!("  2  use Very Normal, the built-in layout, for now (it starts from QWERTY)");
     println!("  q  quit, and come back with make-plan\n");
     let choice = ask(if enough {
         "Choose [1]: "
@@ -250,8 +250,11 @@ fn welcome(progress: &std::path::Path) -> Result<bool> {
     };
     match choice {
         "1" if enough => {
+            let mut o = Options {
+                from: ask_start()?,
+                ..Options::default()
+            };
             let name = ask("What should your layout be called? [My Layout]: ")?;
-            let mut o = Options::default();
             if !name.is_empty() {
                 o.name = name;
             }
@@ -270,6 +273,36 @@ fn welcome(progress: &std::path::Path) -> Result<bool> {
             Ok(true)
         }
         _ => Ok(false),
+    }
+}
+
+/// Which layout you type on now: one of the usual ones, or your own 30 keys.
+fn ask_start() -> Result<String> {
+    println!("\nWhich layout do you type on now?\n");
+    for (i, name) in named::STARTS.iter().enumerate() {
+        println!("  {}  {name}", i + 1);
+    }
+    println!("  or type your own 30 keys, top row first, like qwertyuiop asdfghjkl; zxcvbnm,./\n");
+    loop {
+        let answer = ask("Layout [1]: ")?;
+        let pick = match answer.as_str() {
+            "" => named::STARTS[0].to_string(),
+            n if n
+                .parse::<usize>()
+                .is_ok_and(|n| (1..=named::STARTS.len()).contains(&n)) =>
+            {
+                named::STARTS[n.parse::<usize>()? - 1].to_string()
+            }
+            other => other.to_string(),
+        };
+        match named::start(&pick) {
+            Ok((name, keys)) => {
+                println!("\n{}\n", optimise::pretty(&keys));
+                println!("Starting from {name}.");
+                return Ok(pick);
+            }
+            Err(e) => println!("{e}"),
+        }
     }
 }
 

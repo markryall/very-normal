@@ -1,8 +1,8 @@
 # very-normal
 
-A terminal typing tutor for moving a keyboard from QWERTY to a new layout a
-few keys at a time, with a bossy coach and checks against your ZSA Oryx
-layout.
+A terminal typing tutor for moving your keyboard from the layout you type on
+now (QWERTY, Dvorak, Colemak or anything else) to a new one a few keys at a
+time, with a bossy coach and checks against your ZSA Oryx layout.
 
 It ships with **Very Normal**, a layout optimised on 318k characters of my
 own typing to Claude Code, with Q, W, Z, X, C and V locked so every Mac
@@ -34,8 +34,9 @@ Linux on x86_64 and ARM, so none of these need Rust except the last.
 ## Make your own layout
 
 very-normal can build a layout from your own typing, and a plan of stages
-that gets you there from QWERTY. The first time you run `very-normal`, it
-offers to do this from the messages you've typed to Claude Code. It only
+that gets you there from the layout you type on now. The first time you run
+`very-normal`, it asks what that is and offers to do this from the messages
+you've typed to Claude Code. It only
 reads your messages: never Claude's replies, tool output or pastes. Any time
 after that:
 
@@ -51,9 +52,14 @@ leaves your Claude Code messages out:
 very-normal make-plan --name "My Layout" --text ~/notes ~/Documents/emails.txt
 ```
 
-- `--lock` takes keys that stay where QWERTY has them. The default,
-  `qwzxcv,./`, keeps Cmd+Q, W, Z, X, C and V. Each locked key costs the
-  layout a little, and locking nothing is fine too.
+- `--from` is the layout you type on now: `qwerty` (the default), `dvorak`,
+  `colemak`, `colemak-dh`, `workman` or `norman`, or your own 30 keys written
+  top row first, like `"qwertyuiop asdfghjkl; zxcvbnm,./"`. The stages start
+  there.
+- `--lock` takes keys that stay where they are now. The default keeps Q, W,
+  Z, X, C and V where they are, for their Cmd shortcuts, and the punctuation
+  (`, . /` and `'`). Each locked key costs the layout a little, and
+  `--lock ""` locks nothing.
 - `--oryx-layout <id>` reads your home row holds from Oryx, if you have a ZSA
   board.
 - `very-normal make-plan --help` lists the rest.
@@ -64,8 +70,9 @@ to `~/.config/very-normal/plans/`, named after your layout:
 - `<name>.toml`: your layout and its stages, with drill words from your own
   writing. Keep it private, and look through the words for names you'd rather
   not see on screen.
-- `<name>.md`: your layout and how it scores against QWERTY, Colemak-DH,
-  Norman and Very Normal on your typing. It has no words or text in it.
+- `<name>.md`: your layout and how it scores on your typing against where
+  you started and QWERTY, Dvorak, Colemak, Colemak-DH, Workman, Norman and
+  Very Normal. It has no words or text in it.
 
 Making a plan never touches the plan you're practising or your progress, so
 rerun it as often as you like with other text, locks or names. Your first
@@ -181,7 +188,11 @@ config (macOS, Linux, Windows), and `very-normal keymap karabiner` prints a
 for `~/.config/karabiner/assets/complex_modifications/`. Add a stage number to
 get a different one.
 
-Both remap in software and expect the keyboard to send QWERTY, so a keyboard
+Both remap in software and build the whole layout themselves, whatever you
+started from, so set the computer to the U.S. (QWERTY) layout while they're
+on. If your plan's 30 keys take in the quote (as Dvorak's do), the quote key
+beside the home row types what they leave out. They expect the keyboard to
+send QWERTY, so a keyboard
 whose firmware already has the stage must be left out, or its keys move twice.
 The Karabiner rule only applies to the Mac's built-in keyboard (add
 `--all-keyboards` to change that), so a remapped Voyager and a Very Normal

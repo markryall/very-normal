@@ -14,17 +14,15 @@ use std::path::PathBuf;
 use anyhow::{Context, Result, bail};
 use serde_json::json;
 
+use crate::named;
 use crate::{corpus, layout, oryx, plans, store};
 
-pub const QWERTY: &str = "qwertyuiopasdfghjkl;zxcvbnm,./";
-const CHARS: &[u8; 30] = b"abcdefghijklmnopqrstuvwxyz;,./";
-pub const DEFAULT_LOCK: &str = "qwzxcv,./";
-const REFERENCE: [(&str, &str); 4] = [
-    ("QWERTY", QWERTY),
-    ("Norman", "qwdfkjurl;asetgynioh zxcvbpm,./"),
-    ("Colemak-DH", "qwfpbjluy;arstgmneiozxcdvkh,./"),
-    ("Very Normal (Mark's)", "qwydgbhaujilstmpnoerzxcvk;f,./"),
-];
+/// Every character the 30 keys can hold; one is always left out of a layout.
+const CHARS: &[u8; 31] = b"abcdefghijklmnopqrstuvwxyz;,./'";
+/// The position of the character a layout leaves out (on an outer key).
+const OFF: usize = 30;
+/// What typing the left-out character costs: an outer pinky key.
+const OFF_EFFORT: f64 = 2.2;
 /// Column to finger: 0-3 left, 6-9 right.
 const FINGER: [usize; 10] = [0, 1, 2, 3, 3, 6, 6, 7, 8, 9];
 const EFFORT: [[f64; 10]; 3] = [
@@ -46,7 +44,10 @@ pub struct Options {
     pub projects: PathBuf,
     /// Other writing: files, folders, or `-` for stdin.
     pub text: Vec<String>,
-    pub lock: String,
+    /// The layout you type on now: a known name, or your 30 keys.
+    pub from: String,
+    /// Keys that stay where they are; by default Q, W, Z, X, C, V and punctuation.
+    pub lock: Option<String>,
     pub oryx_layout: Option<String>,
     pub home_row_mods: Option<Vec<String>>,
     pub per_stage: usize,
@@ -68,7 +69,8 @@ impl Default for Options {
             claude: true,
             projects: corpus::claude_projects(),
             text: Vec::new(),
-            lock: DEFAULT_LOCK.into(),
+            from: "QWERTY".into(),
+            lock: None,
             oryx_layout: None,
             home_row_mods: None,
             per_stage: 2,
@@ -84,18 +86,23 @@ impl Default for Options {
 }
 
 pub const USAGE: &str = "\
-usage: very-normal make-plan [--name NAME] [--text FILE|FOLDER|- ...] [--no-claude]
-                             [--lock KEYS] [--oryx-layout ID] [--home-row-mods M,M,...]
+usage: very-normal make-plan [--name NAME] [--from LAYOUT] [--text FILE|FOLDER|- ...]
+                             [--no-claude] [--lock KEYS] [--oryx-layout ID] [--home-row-mods M,M,...]
                              [--per-stage N] [--restarts N] [--iters N] [--seed N]
                              [--out FILE] [--summary FILE] [--force] [--corpus-out FILE]
 
-Makes a layout from your own typing and a plan to get there from QWERTY.
+Makes a layout from your own typing and a plan to get there from the layout
+you type on now.
 By default it reads what you typed to Claude Code (never Claude's replies).
 --text adds any other writing: files, folders of .md/.txt/.org files, or -
 for stdin. --no-claude leaves your Claude Code messages out.
 
---lock         keys that stay where QWERTY has them (default qwzxcv,./ keeps
-               Cmd+Q, W, Z, X, C and V). Each one costs the layout a little.
+--from         the layout you type on now: QWERTY (the default), Dvorak, Colemak,
+               Colemak-DH, Workman or Norman, or your own 30 keys written top
+               row first, like 'qwertyuiop asdfghjkl; zxcvbnm,./'
+--lock         keys that stay where they are now (default: Q, W, Z, X, C and V for
+               their Cmd shortcuts, and , . / '). Each one costs the layout a
+               little; --lock '' locks nothing.
 --oryx-layout  your Oryx layout id; its home row holds are read from Oryx
 --out          the plan (default ~/.config/very-normal/plans/<name>.toml; private)
 --summary      the shareable summary (default next to the plan, as .md)
@@ -131,7 +138,8 @@ impl Options {
                         bail!("--text needs at least one file or folder");
                     }
                 }
-                "--lock" => o.lock = value(&mut i, flag)?,
+                "--from" => o.from = value(&mut i, flag)?,
+                "--lock" => o.lock = Some(value(&mut i, flag)?),
                 "--oryx-layout" => o.oryx_layout = Some(value(&mut i, flag)?),
                 "--home-row-mods" => {
                     let mods: Vec<String> = value(&mut i, flag)?
@@ -158,6 +166,7 @@ impl Options {
         if !o.claude && o.text.is_empty() {
             bail!("--no-claude leaves nothing to read; add --text with some of your writing");
         }
+        named::start(&o.from)?;
         if o.per_stage == 0 || o.restarts == 0 || o.iters == 0 {
             bail!("--per-stage, --restarts and --iters must be at least 1");
         }
@@ -204,8 +213,8 @@ impl Rng {
 /// How often each key, and each pair of keys in a row, was typed.
 #[derive(Debug, Clone)]
 pub struct Counts {
-    uni: [f64; 30],
-    bi: [[f64; 30]; 30],
+    uni: [f64; 31],
+    bi: [[f64; 31]; 31],
 }
 
 fn index(ch: char) -> Option<usize> {
@@ -213,11 +222,12 @@ fn index(ch: char) -> Option<usize> {
 }
 
 impl Counts {
-    /// Counts lowercase text; anything that isn't one of the 30 keys breaks a pair.
+    /// Counts lowercase text; anything that isn't one of the 31 characters
+    /// breaks a pair.
     pub fn of(text: &str) -> Counts {
         let mut c = Counts {
-            uni: [0.0; 30],
-            bi: [[0.0; 30]; 30],
+            uni: [0.0; 31],
+            bi: [[0.0; 31]; 31],
         };
         let mut prev: Option<usize> = None;
         for ch in text.chars() {
@@ -242,9 +252,11 @@ impl Counts {
 }
 
 /// The cost of each key, and of each pair of keys typed one after the other.
+/// Position `OFF` is the outer key holding the character a layout leaves out:
+/// it costs `OFF_EFFORT`, and pairs with it cost nothing either way.
 struct Model {
-    effort: [f64; 30],
-    pair: [[f64; 30]; 30],
+    effort: [f64; 31],
+    pair: [[f64; 31]; 31],
 }
 
 fn row_col(p: usize) -> (usize, usize) {
@@ -254,9 +266,10 @@ fn row_col(p: usize) -> (usize, usize) {
 impl Model {
     fn new() -> Model {
         let mut m = Model {
-            effort: [0.0; 30],
-            pair: [[0.0; 30]; 30],
+            effort: [0.0; 31],
+            pair: [[0.0; 31]; 31],
         };
+        m.effort[OFF] = OFF_EFFORT;
         for p in 0..30 {
             let (r1, c1) = row_col(p);
             m.effort[p] = EFFORT[r1][c1];
@@ -291,9 +304,9 @@ impl Model {
     /// Total cost, not yet divided by how much was typed.
     fn raw(&self, p: &Positions, c: &Counts) -> f64 {
         let mut s = 0.0;
-        for i in 0..30 {
+        for i in 0..31 {
             s += c.uni[i] * self.effort[p[i]];
-            for j in 0..30 {
+            for j in 0..31 {
                 s += c.bi[i][j] * self.pair[p[i]][p[j]];
             }
         }
@@ -303,7 +316,7 @@ impl Model {
     /// The part of the raw cost that involves keys `a` or `b`.
     fn part(&self, p: &Positions, c: &Counts, a: usize, b: usize) -> f64 {
         let mut s = c.uni[a] * self.effort[p[a]] + c.uni[b] * self.effort[p[b]];
-        for j in 0..30 {
+        for j in 0..31 {
             s += c.bi[a][j] * self.pair[p[a]][p[j]] + c.bi[j][a] * self.pair[p[j]][p[a]];
             s += c.bi[b][j] * self.pair[p[b]][p[j]] + c.bi[j][b] * self.pair[p[j]][p[b]];
         }
@@ -320,23 +333,21 @@ impl Model {
     }
 }
 
-/// Where each of the 30 keys (in `CHARS` order) sits: 0-9 top row, 10-19
-/// home row, 20-29 bottom row.
-type Positions = [usize; 30];
+/// Where each character (in `CHARS` order) sits: 0-9 top row, 10-19 home
+/// row, 20-29 bottom row, or `OFF` for the one the layout leaves out.
+type Positions = [usize; 31];
 
 fn positions(keys: &str) -> Positions {
     let keys = keys.as_bytes();
-    std::array::from_fn(|i| {
-        keys.iter()
-            .position(|k| *k == CHARS[i])
-            .expect("a layout has all 30 keys")
-    })
+    std::array::from_fn(|i| keys.iter().position(|k| *k == CHARS[i]).unwrap_or(OFF))
 }
 
 fn keys_of(p: &Positions) -> String {
     let mut grid = [b' '; 30];
     for (i, pos) in p.iter().enumerate() {
-        grid[*pos] = CHARS[i];
+        if *pos != OFF {
+            grid[*pos] = CHARS[i];
+        }
     }
     String::from_utf8(grid.to_vec()).expect("ascii")
 }
@@ -356,18 +367,19 @@ pub struct Metrics {
 fn metrics(model: &Model, keys: &str, c: &Counts) -> Metrics {
     let p = positions(keys);
     let total = c.total();
-    let finger = |i: usize| FINGER[p[i] % 10];
+    // The left-out character is on an outer key, under the pinky.
+    let finger = |i: usize| if p[i] == OFF { 9 } else { FINGER[p[i] % 10] };
     let (mut home, mut pinky, mut same, mut pairs) = (0.0, 0.0, 0.0, 0.0);
     for (i, pos) in p.iter().enumerate() {
-        if pos / 10 == 1 {
+        if *pos != OFF && pos / 10 == 1 {
             home += c.uni[i];
         }
         if matches!(finger(i), 0 | 9) {
             pinky += c.uni[i];
         }
-        for j in 0..30 {
+        for j in 0..31 {
             pairs += c.bi[i][j];
-            if finger(i) == finger(j) {
+            if finger(i) == finger(j) && p[i] != OFF && p[j] != OFF {
                 same += c.bi[i][j];
             }
         }
@@ -380,11 +392,19 @@ fn metrics(model: &Model, keys: &str, c: &Counts) -> Metrics {
     }
 }
 
-/// Simulated annealing from a shuffle of QWERTY, with locked keys pinned.
-fn anneal(model: &Model, c: &Counts, lock: &str, iters: usize, rng: &mut Rng) -> (f64, Positions) {
-    let mut p = positions(QWERTY);
-    let free: Vec<usize> = (0..30)
-        .filter(|i| !lock.contains(CHARS[*i] as char))
+/// Simulated annealing from a shuffle of where you start, with locked keys
+/// pinned.
+fn anneal(
+    model: &Model,
+    c: &Counts,
+    start: &str,
+    lock: &str,
+    iters: usize,
+    rng: &mut Rng,
+) -> (f64, Positions) {
+    let mut p = positions(start);
+    let free: Vec<usize> = (0..31)
+        .filter(|i| p[*i] != OFF && !lock.contains(CHARS[*i] as char))
         .collect();
     if free.len() < 2 {
         return (model.raw(&p, c) / c.total(), p);
@@ -420,10 +440,12 @@ fn anneal(model: &Model, c: &Counts, lock: &str, iters: usize, rng: &mut Rng) ->
 
 /// Swaps one key into its final place at a time, most-typed first, and
 /// groups the swaps into stages.
-fn ladder(target: &str, freq: &[usize; 30], per_stage: usize) -> Vec<String> {
-    let mut order: Vec<usize> = (0..30).collect();
+fn ladder(start: &str, target: &str, freq: &[usize; 31], per_stage: usize) -> Vec<String> {
+    let mut order: Vec<usize> = (0..31)
+        .filter(|i| start.contains(CHARS[*i] as char))
+        .collect();
     order.sort_by_key(|i| std::cmp::Reverse(freq[*i]));
-    let mut state = QWERTY.as_bytes().to_vec();
+    let mut state = start.as_bytes().to_vec();
     let target_bytes = target.as_bytes();
     let mut swaps = Vec::new();
     for i in order {
@@ -437,8 +459,8 @@ fn ladder(target: &str, freq: &[usize; 30], per_stage: usize) -> Vec<String> {
         }
     }
     debug_assert_eq!(state, target_bytes);
-    let mut out = vec![QWERTY.to_string()];
-    let mut state = QWERTY.as_bytes().to_vec();
+    let mut out = vec![start.to_string()];
+    let mut state = start.as_bytes().to_vec();
     for group in swaps.chunks(per_stage) {
         for (a, b) in group {
             let i = state.iter().position(|c| c == a).expect("key");
@@ -719,6 +741,14 @@ pub fn gather(o: &Options) -> Result<(Vec<String>, Vec<&'static str>)> {
 
 /// Makes a plan and its summary, and writes both. Progress goes to stderr.
 pub fn make(o: &Options) -> Result<Made> {
+    let (start_name, start) = named::start(&o.from)?;
+    let lock = o
+        .lock
+        .clone()
+        .unwrap_or_else(|| named::default_lock(&start));
+    if let Some(c) = lock.chars().find(|c| !start.contains(*c)) {
+        bail!("--lock has {c:?}, which isn't one of {start_name}'s 30 keys");
+    }
     let slug = plans::slug(&o.name);
     let progress = store::default_path();
     let fresh = plans::fresh(&progress);
@@ -788,12 +818,12 @@ pub fn make(o: &Options) -> Result<Made> {
     let results: Vec<(f64, Positions)> = std::thread::scope(|s| {
         let handles: Vec<_> = (0..o.restarts)
             .map(|r| {
-                let (model, train, lock) = (&model, &train, o.lock.as_str());
+                let (model, train, start, lock) = (&model, &train, start.as_str(), lock.as_str());
                 let seed = o
                     .seed
                     .wrapping_add(1 + r as u64)
                     .wrapping_mul(0x2545_F491_4F6C_DD1D);
-                s.spawn(move || anneal(model, train, lock, o.iters, &mut Rng::new(seed)))
+                s.spawn(move || anneal(model, train, start, lock, o.iters, &mut Rng::new(seed)))
             })
             .collect();
         handles
@@ -829,13 +859,13 @@ pub fn make(o: &Options) -> Result<Made> {
         l.len()
     };
 
-    let mut freq = [0usize; 30];
+    let mut freq = [0usize; 31];
     for ch in text.chars() {
         if let Some(i) = index(ch) {
             freq[i] += 1;
         }
     }
-    let steps = ladder(&target, &freq, o.per_stage);
+    let steps = ladder(&start, &target, &freq, o.per_stage);
     let titles = names_and_blurbs(&model, &o.name, &steps, &full);
     let vocab = vocabulary(&raw);
     let common: Vec<String> = vocab.iter().take(500).map(|(w, _)| w.clone()).collect();
@@ -850,7 +880,7 @@ pub fn make(o: &Options) -> Result<Made> {
     let mut plan = String::new();
     let _ = writeln!(
         plan,
-        "# A very-normal plan for {}, made by `very-normal make-plan` from your own\n# writing. The drill words are your vocabulary: keep this file private.\n",
+        "# A very-normal plan for {}, from {start_name}, made by `very-normal make-plan`\n# from your own writing. The drill words are your vocabulary: keep this file private.\n",
         o.name
     );
     let _ = writeln!(plan, "name = {}", json!(o.name));
@@ -907,7 +937,9 @@ pub fn make(o: &Options) -> Result<Made> {
         messages: msgs.len(),
         characters,
         upper,
-        lock: &o.lock,
+        lock: &lock,
+        start_name: &start_name,
+        start: &start,
         sources: &sources,
         stages: steps.len() - 1,
         ladder: &steps,
@@ -948,14 +980,17 @@ struct SummaryInput<'a> {
     model: &'a Model,
     test: &'a Counts,
     full: &'a Counts,
-    freq: &'a [usize; 30],
+    freq: &'a [usize; 31],
     messages: usize,
     characters: usize,
     upper: f64,
     lock: &'a str,
+    /// The layout you type on now, and its name.
+    start_name: &'a str,
+    start: &'a str,
     sources: &'a [&'static str],
     stages: usize,
-    /// Every stage's keys, QWERTY first, and what each is called.
+    /// Every stage's keys, where you start first, and what each is called.
     ladder: &'a [String],
     stage_names: &'a [&'a str],
     restarts: &'a [(f64, Positions)],
@@ -969,13 +1004,21 @@ fn summary(s: &SummaryInput) -> String {
         "| Layout | Effort (lower is better) | Home row | Same-finger pairs | Pinky |\n|---|---|---|---|---|\n",
     );
     let mut scores = serde_json::Map::new();
-    let ours = [(s.name, s.target)];
-    for (label, keys) in ours.iter().chain(REFERENCE.iter()) {
-        let keys: String = keys.chars().filter(|c| !c.is_whitespace()).collect();
-        let m = metrics(s.model, &keys, s.test);
+    let mut compared = vec![(s.name, s.target)];
+    if !named::KNOWN.iter().any(|(_, k)| *k == s.start) {
+        compared.push((s.start_name, s.start));
+    }
+    compared.extend(named::KNOWN.iter().copied());
+    for (label, keys) in &compared {
+        let m = metrics(s.model, keys, s.test);
+        let now = if *keys == s.start && *label != s.name {
+            " (what you type on now)"
+        } else {
+            ""
+        };
         let _ = writeln!(
             table,
-            "| {label} | {:.3} | {:.0}% | {:.1}% | {:.1}% |",
+            "| {label}{now} | {:.3} | {:.0}% | {:.1}% | {:.1}% |",
             m.score, m.home, m.same_finger, m.pinky
         );
         let key = if *label == s.name { "yours" } else { label };
@@ -989,11 +1032,11 @@ fn summary(s: &SummaryInput) -> String {
             }),
         );
     }
-    let mut order: Vec<usize> = (0..30).collect();
+    let mut order: Vec<usize> = (0..31).collect();
     order.sort_by_key(|i| std::cmp::Reverse(s.freq[*i]));
     let top: String = order[..10].iter().map(|i| CHARS[*i] as char).collect();
     let total: usize = s.freq.iter().sum::<usize>().max(1);
-    let frequency: serde_json::Map<String, serde_json::Value> = (0..30)
+    let frequency: serde_json::Map<String, serde_json::Value> = (0..31)
         .map(|i| {
             (
                 (CHARS[i] as char).to_string(),
@@ -1001,17 +1044,18 @@ fn summary(s: &SummaryInput) -> String {
             )
         })
         .collect();
-    let q = metrics(s.model, QWERTY, s.full);
+    let q = metrics(s.model, s.start, s.full);
     let moved = (0..30)
-        .filter(|i| s.target.as_bytes()[*i] != QWERTY.as_bytes()[*i])
+        .filter(|i| s.target.as_bytes()[*i] != s.start.as_bytes()[*i])
         .count();
     let mut runs: Vec<(f64, String)> = s.restarts.iter().map(|(c, p)| (*c, keys_of(p))).collect();
     runs.sort_by(|a, b| a.0.total_cmp(&b.0));
     let spread = runs.last().map_or(0.0, |w| w.0) - runs.first().map_or(0.0, |b| b.0);
     let data = json!({
-        "format": 1,
+        "format": 2,
         "name": s.name,
         "layout": rows(s.target),
+        "start": { "name": s.start_name, "layout": rows(s.start) },
         "lock": s.lock,
         "sources": s.sources,
         "messages": s.messages,
@@ -1029,12 +1073,13 @@ fn summary(s: &SummaryInput) -> String {
          - Typing studied: {messages} messages from {sources}, {chars} characters, {upper:.1}% uppercase\n\
          - Ten most-typed keys: `{top}`\n\
          - Locked in place: `{lock}`\n\
-         - Stages from QWERTY: {stages}, moving {moved} keys\n\
-         - On QWERTY: {qh:.0}% home row, {qs:.1}% same-finger pairs\n\
+         - Starting from: {start_name}, `{start_rows}`\n\
+         - Stages from {start_name}: {stages}, moving {moved} keys\n\
+         - On {start_name}: {qh:.0}% home row, {qs:.1}% same-finger pairs\n\
          - The search ran {n} times and found {distinct} different layouts, {spread:.4} apart in effort. \
          All {n} put {agree} of the 30 keys in the same place.\n\n\
          Scored on 20% of messages the optimiser never saw:\n\n{table}\n\
-         The stages from QWERTY, most-typed letters first:\n\n{ladder}\n\
+         The stages from {start_name}, most-typed letters first:\n\n{ladder}\n\
          <details><summary>The numbers, for comparing layouts</summary>\n\n```json\n{json}\n```\n\n</details>\n\n\
          Made with [very-normal](https://github.com/markryall/very-normal) {version}.\n",
         name = s.name,
@@ -1048,6 +1093,8 @@ fn summary(s: &SummaryInput) -> String {
         chars = s.characters,
         upper = s.upper,
         lock = s.lock,
+        start_name = s.start_name,
+        start_rows = rows(s.start),
         stages = s.stages,
         qh = q.home,
         qs = q.same_finger,
@@ -1148,6 +1195,11 @@ fn encode(s: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::named::QWERTY;
+
+    fn dvorak() -> &'static str {
+        named::find("dvorak").unwrap().1
+    }
 
     const SAMPLE: &str = "the quick brown fox jumps over the lazy dog, then the dog sleeps. \
         we typed this sample so the scoring has something to chew on; it's fine.";
@@ -1170,22 +1222,45 @@ mod tests {
     }
 
     #[test]
-    fn annealing_beats_qwerty_and_keeps_locked_keys() {
+    fn annealing_beats_where_you_start_and_keeps_locked_keys() {
         let model = Model::new();
         let c = Counts::of(&SAMPLE.repeat(20));
-        let (score, p) = anneal(&model, &c, DEFAULT_LOCK, 20_000, &mut Rng::new(1));
-        let keys = keys_of(&p);
-        assert!(score < metrics(&model, QWERTY, &c).score);
-        for ch in DEFAULT_LOCK.chars() {
-            assert_eq!(keys.find(ch), QWERTY.find(ch), "{ch} moved");
+        for start in [QWERTY, dvorak()] {
+            let lock = named::default_lock(start);
+            let (score, p) = anneal(&model, &c, start, &lock, 20_000, &mut Rng::new(1));
+            let keys = keys_of(&p);
+            assert!(score < metrics(&model, start, &c).score);
+            for ch in lock.chars() {
+                assert_eq!(keys.find(ch), start.find(ch), "{ch} moved");
+            }
+            let mut a: Vec<char> = keys.chars().collect();
+            let mut b: Vec<char> = start.chars().collect();
+            a.sort_unstable();
+            b.sort_unstable();
+            assert_eq!(a, b, "the search keeps the same 30 keys");
         }
+    }
+
+    #[test]
+    fn the_left_out_key_costs_the_same_wherever_you_start() {
+        let model = Model::new();
+        // QWERTY leaves out the quote and Dvorak the slash: both cost an outer key.
+        assert_eq!(
+            metrics(&model, QWERTY, &Counts::of(&"'".repeat(5))).score,
+            OFF_EFFORT
+        );
+        assert_eq!(
+            metrics(&model, dvorak(), &Counts::of(&"/".repeat(5))).score,
+            OFF_EFFORT
+        );
+        assert!(metrics(&model, QWERTY, &Counts::of(&"/".repeat(5))).score < OFF_EFFORT);
     }
 
     #[test]
     fn the_ladder_climbs_from_qwerty_to_the_target() {
         let target = "qwydgbhaujilstmpnoerzxcvk;f,./";
         let freq = std::array::from_fn(|i| 30 - i);
-        let steps = ladder(target, &freq, 2);
+        let steps = ladder(QWERTY, target, &freq, 2);
         assert_eq!(steps.first().map(String::as_str), Some(QWERTY));
         assert_eq!(steps.last().map(String::as_str), Some(target));
         for w in steps.windows(2) {
@@ -1200,15 +1275,22 @@ mod tests {
     }
 
     #[test]
-    fn reference_layouts_are_whole() {
-        for (name, keys) in REFERENCE {
-            let keys: String = keys.chars().filter(|c| !c.is_whitespace()).collect();
-            let mut k: Vec<u8> = keys.into_bytes();
-            k.sort_unstable();
-            let mut want = CHARS.to_vec();
-            want.sort_unstable();
-            assert_eq!(k, want, "{name}");
-        }
+    fn the_ladder_climbs_from_dvorak_too() {
+        let freq = std::array::from_fn(|i| 31 - i);
+        let model = Model::new();
+        let c = Counts::of(&SAMPLE.repeat(20));
+        let (_, p) = anneal(&model, &c, dvorak(), "", 5_000, &mut Rng::new(2));
+        let target = keys_of(&p);
+        let steps = ladder(dvorak(), &target, &freq, 2);
+        assert_eq!(steps.first().map(String::as_str), Some(dvorak()));
+        assert_eq!(steps.last(), Some(&target));
+        let stages: String = steps
+            .iter()
+            .map(|k| format!("[[stage]]\nname = \"s\"\nkeys = {k:?}\n"))
+            .collect();
+        let words: String = (0..60).map(|i| format!("\"w{i}\", ")).collect();
+        layout::Plan::parse(&format!("name = \"d\"\ncommon_words = [{words}]\n{stages}"))
+            .expect("a plan from Dvorak loads");
     }
 
     #[test]
@@ -1224,6 +1306,11 @@ mod tests {
         let o =
             Options::parse(&["--text", "a.md", "notes", "--no-claude", "--name", "Hi"]).unwrap();
         assert_eq!(o.text, vec!["a.md", "notes"]);
+        assert_eq!(
+            Options::parse(&["--from", "dvorak"]).unwrap().from,
+            "dvorak"
+        );
+        assert!(Options::parse(&["--from", "azerty-ish"]).is_err());
         assert!(!o.claude);
         assert_eq!(o.name, "Hi");
         assert!(Options::parse(&["--no-claude"]).is_err());
