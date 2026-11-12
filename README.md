@@ -18,9 +18,18 @@ z x c v k   ; f , . /
 
 ```sh
 brew install markryall/tap/very-normal
-# or
-cargo install very-normal
 ```
+
+Or, on macOS or Linux without Homebrew:
+
+```sh
+curl --proto '=https' --tlsv1.2 -LsSf https://github.com/markryall/very-normal/releases/latest/download/very-normal-installer.sh | sh
+```
+
+Or from source: `cargo install very-normal`.
+
+Releases ship prebuilt binaries for Apple Silicon and Intel Macs and for
+Linux on x86_64 and ARM, so none of these need Rust except the last.
 
 ## Make your own layout
 

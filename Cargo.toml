@@ -1,10 +1,11 @@
 [package]
 name = "very-normal"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2024"
 authors = ["Mark Ryall"]
 description = "A terminal typing tutor that makes a keyboard layout from your own typing and moves you to it from QWERTY a few keys at a time"
 license = "MIT OR Apache-2.0"
+homepage = "https://github.com/markryall/very-normal"
 repository = "https://github.com/markryall/very-normal"
 readme = "README.md"
 keywords = ["cli", "tui", "typing", "keyboard", "zsa"]
@@ -18,3 +19,8 @@ ratatui = "0.30.2"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
 toml = "1"
+
+# The profile that 'dist' will build with
+[profile.dist]
+inherits = "release"
+lto = "thin"
