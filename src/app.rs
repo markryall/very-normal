@@ -29,8 +29,37 @@ pub enum Phase {
     Layout,
     /// The breathing and stretches, every guided session.
     Warmup,
+    /// Ten minutes of drills picked for you.
+    Practice,
     /// Everything: stages, drills, the gate and Oryx.
     Dashboard,
+}
+
+/// Seconds of drill time in a guided practice block.
+pub const BLOCK_SECS: f64 = 600.0;
+/// Two runs in a row under this accuracy end a practice block early.
+pub const BLOCK_ACCURACY: f64 = 95.0;
+
+/// The drill for the `i`th run of a practice block: real text while you're
+/// fresh, then new keys and review in turn.
+pub fn practice_mode(i: usize) -> Mode {
+    match i {
+        0 => Mode::Real,
+        i if i % 2 == 1 => Mode::Words,
+        _ => Mode::Review,
+    }
+}
+
+/// The runs of the practice block under way: their durations and accuracies.
+#[derive(Debug, Default)]
+struct PracticeBlock {
+    runs: Vec<(f64, f64)>,
+}
+
+impl PracticeBlock {
+    fn secs(&self) -> f64 {
+        self.runs.iter().map(|(secs, _)| secs).sum()
+    }
 }
 
 pub struct App {
@@ -52,6 +81,8 @@ pub struct App {
     override_armed: bool,
     /// The warm-up, while it runs.
     warmup: Option<Warmup>,
+    /// The guided practice block, while it runs.
+    block: Option<PracticeBlock>,
     /// When you recently gave up on a drill with esc; several close together
     /// usually means frustration.
     abandons: Vec<Instant>,
@@ -90,6 +121,7 @@ impl App {
             layout_id: oryx::layout_id(),
             override_armed: false,
             warmup: None,
+            block: None,
             abandons: Vec::new(),
             should_quit: false,
         }
@@ -122,7 +154,7 @@ impl App {
     /// Ends a timed drill once its minute is up.
     pub fn tick(&mut self, now: Instant) {
         if self.warmup.as_ref().is_some_and(|w| w.done(now)) {
-            self.end_warmup(true);
+            self.end_warmup(true, now);
         }
         if self.typing {
             self.drill.tick(now);
@@ -136,10 +168,10 @@ impl App {
         self.progress.warmed_up.as_deref() != Some(coach::today(now_ms()).as_str())
     }
 
-    fn end_warmup(&mut self, completed: bool) {
+    fn end_warmup(&mut self, completed: bool, now: Instant) {
         self.warmup = None;
         if self.phase == Phase::Warmup {
-            self.phase = Phase::Dashboard;
+            self.start_practice(now);
         }
         self.progress.warmed_up = Some(coach::today(now_ms()));
         self.save();
@@ -154,6 +186,50 @@ impl App {
                 true,
             )
         });
+    }
+
+    fn start_practice(&mut self, now: Instant) {
+        self.phase = Phase::Practice;
+        self.block = Some(PracticeBlock::default());
+        self.mode = practice_mode(0);
+        self.new_drill(now);
+    }
+
+    fn end_practice(&mut self, message: String, now: Instant) {
+        self.phase = Phase::Dashboard;
+        self.block = None;
+        self.message = Some((message, true));
+        self.new_drill(now);
+    }
+
+    /// After a run in a practice block: the next drill, or the end of the block.
+    fn practice_next(&mut self, secs: f64, wpm: f64, acc: f64, now: Instant) {
+        let Some(block) = &mut self.block else {
+            return;
+        };
+        block.runs.push((secs, acc));
+        let low: Vec<f64> = block.runs.iter().rev().take(2).map(|(_, a)| *a).collect();
+        if low.len() == 2 && low.iter().all(|a| *a < BLOCK_ACCURACY) {
+            return self.end_practice(
+                format!(
+                    "{:.1}% and then {:.1}%. That's the sign to stop for now. No rush: it'll come together after a rest.",
+                    low[1], low[0]
+                ),
+                now,
+            );
+        }
+        if block.secs() >= BLOCK_SECS {
+            return self.end_practice(
+                "That's ten minutes. Practice done for this session; let it settle.".into(),
+                now,
+            );
+        }
+        self.mode = practice_mode(block.runs.len());
+        self.new_drill(now);
+        self.message = Some((
+            format!("{wpm:.0} WPM · {acc:.1}% accuracy. Press enter for the next drill."),
+            true,
+        ));
     }
 
     fn finish(&mut self, now: Instant) {
@@ -234,6 +310,10 @@ impl App {
             format!("{wpm:.0} WPM · {acc:.1}% accuracy. {verdict}{record}"),
             good,
         ));
+        if self.phase == Phase::Practice {
+            let secs = (self.drill.elapsed(now).as_secs_f64() * 10.0).round() / 10.0;
+            self.practice_next(secs, wpm, acc, now);
+        }
     }
 
     pub fn handle_key(&mut self, key: KeyEvent, now: Instant) {
@@ -259,13 +339,16 @@ impl App {
                 KeyCode::Enter | KeyCode::Tab | KeyCode::Char(' ') => {
                     w.skip_step(now);
                     if w.done(now) {
-                        self.end_warmup(true);
+                        self.end_warmup(true, now);
                     }
                 }
-                KeyCode::Char('s') => self.end_warmup(false),
+                KeyCode::Char('s') => self.end_warmup(false, now),
+                KeyCode::Esc if self.phase == Phase::Warmup => {
+                    self.warmup = None;
+                    self.start_practice(now);
+                }
                 KeyCode::Esc => {
                     self.warmup = None;
-                    self.phase = Phase::Dashboard;
                     self.message = Some((
                         "Warm-up paused. Press enter when you're ready.".into(),
                         true,
@@ -302,6 +385,24 @@ impl App {
                         self.finish(now);
                     }
                 }
+                _ => {}
+            }
+            return;
+        }
+        if self.phase == Phase::Practice {
+            match key.code {
+                KeyCode::Enter | KeyCode::Tab | KeyCode::Char(' ') => {
+                    if self.drill.done || self.drill.started() {
+                        self.new_drill(now);
+                    }
+                    self.message = None;
+                    self.drill.touch(now);
+                    self.typing = true;
+                }
+                KeyCode::Esc => {
+                    self.end_practice("Practice stopped. Come back whenever you like.".into(), now)
+                }
+                KeyCode::Char('q') => self.should_quit = true,
                 _ => {}
             }
             return;
@@ -410,6 +511,7 @@ impl App {
                 );
                 return;
             }
+            Phase::Practice => return self.render_practice(frame, now),
             Phase::Dashboard => {}
         }
         // tall enough for the next stage's edits (plus any check) and the gate
@@ -456,6 +558,61 @@ impl App {
             "type the text · esc stops without saving"
         } else {
             "←/→ stage · 1-6 drill · enter start · u warm-up · n new text · g charts · c check oryx · o open oryx · k/v/w tick · q quit"
+        };
+        frame.render_widget(Paragraph::new(help).style(dim()), footer);
+    }
+
+    /// The practice block: the text, the time left, and the map only when you're stuck.
+    fn render_practice(&self, frame: &mut Frame, now: Instant) {
+        let hinting = self.typing && self.drill.hesitating(now);
+        let [keyboard, main, footer] = Layout::vertical([
+            Constraint::Length(if hinting { 5 } else { 0 }),
+            Constraint::Fill(1),
+            Constraint::Length(1),
+        ])
+        .areas(frame.area());
+        if hinting {
+            self.render_keyboard(frame, keyboard, now);
+        }
+        let done = self.block.as_ref().map_or(0.0, PracticeBlock::secs);
+        let left = (BLOCK_SECS - done).max(0.0) as u64;
+        let mut lines = vec![
+            Line::from(vec![
+                Span::styled(
+                    self.mode.label().to_string(),
+                    Style::new().fg(PINK).add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(
+                    format!("   {}:{:02} of practice left", left / 60, left % 60),
+                    dim(),
+                ),
+            ]),
+            Line::raw(""),
+        ];
+        lines.extend(self.text_lines());
+        lines.push(Line::raw(""));
+        match &self.message {
+            Some((msg, _)) if !self.typing => {
+                lines.push(Line::styled(msg.clone(), Style::new().fg(Color::Green)))
+            }
+            _ if !self.typing => lines.push(Line::styled("Press enter to start.", dim())),
+            _ => {}
+        }
+        let border = if self.typing {
+            Style::new().fg(PINK)
+        } else {
+            Style::new()
+        };
+        frame.render_widget(
+            Paragraph::new(lines)
+                .block(Block::bordered().border_style(border).title(" practice "))
+                .wrap(Wrap { trim: false }),
+            main,
+        );
+        let help = if self.typing {
+            "type the text · esc stops this drill without saving"
+        } else {
+            "enter start · esc end practice · q quit"
         };
         frame.render_widget(Paragraph::new(help).style(dim()), footer);
     }
@@ -1321,12 +1478,12 @@ mod guided_tests {
     }
 
     #[test]
-    fn finishing_the_warm_up_lands_on_the_dashboard_without_another() {
+    fn finishing_the_warm_up_starts_practice_without_another() {
         let mut app = guided("finish", None);
         let now = Instant::now();
         app.handle_key(key(KeyCode::Enter), now);
         app.tick(now + std::time::Duration::from_secs(Warmup::total() + 1));
-        assert_eq!(app.phase, Phase::Dashboard);
+        assert_eq!(app.phase, Phase::Practice);
         assert_eq!(app.progress.warmed_up, Some(coach::today(now_ms())));
 
         let later = now + std::time::Duration::from_secs(Warmup::total() + 2);
@@ -1340,14 +1497,153 @@ mod guided_tests {
         let mut app = guided("skip", None);
         app.handle_key(key(KeyCode::Enter), Instant::now());
         app.handle_key(key(KeyCode::Char('s')), Instant::now());
-        assert_eq!(app.phase, Phase::Dashboard);
+        assert_eq!(app.phase, Phase::Practice);
         assert_eq!(app.progress.warmed_up, Some(coach::today(now_ms())));
 
         let mut app = guided("esc", None);
         app.handle_key(key(KeyCode::Enter), Instant::now());
         app.handle_key(key(KeyCode::Esc), Instant::now());
-        assert_eq!(app.phase, Phase::Dashboard);
+        assert_eq!(app.phase, Phase::Practice);
         assert_eq!(app.progress.warmed_up, None);
+    }
+
+    fn practising(name: &str) -> App {
+        let mut app = guided(name, Some(coach::today(now_ms())));
+        app.handle_key(key(KeyCode::Enter), Instant::now());
+        app.handle_key(key(KeyCode::Char('s')), Instant::now());
+        assert_eq!(app.phase, Phase::Practice);
+        app
+    }
+
+    #[test]
+    fn picks_real_text_first_then_new_keys_and_review() {
+        let modes: Vec<Mode> = (0..6).map(practice_mode).collect();
+        assert_eq!(
+            modes,
+            [
+                Mode::Real,
+                Mode::Words,
+                Mode::Review,
+                Mode::Words,
+                Mode::Review,
+                Mode::Words
+            ]
+        );
+        let app = practising("first");
+        assert_eq!(app.mode, Mode::Real);
+    }
+
+    #[test]
+    fn moves_through_the_drills_and_stops_at_ten_minutes() {
+        let mut app = practising("ten");
+        let now = Instant::now();
+        app.practice_next(60.0, 12.0, 97.0, now);
+        assert_eq!(app.mode, Mode::Words);
+        assert!(
+            app.message
+                .as_ref()
+                .unwrap()
+                .0
+                .to_lowercase()
+                .contains("press enter for the next drill"),
+            "{:?}",
+            app.message
+        );
+        for _ in 0..2 {
+            app.practice_next(180.0, 12.0, 98.0, now);
+        }
+        assert_eq!(app.phase, Phase::Practice, "540 seconds isn't ten minutes");
+        app.practice_next(180.0, 12.0, 98.0, now);
+        assert_eq!(app.phase, Phase::Dashboard);
+        assert!(app.block.is_none());
+        assert!(app.message.as_ref().unwrap().0.contains("ten minutes"));
+    }
+
+    #[test]
+    fn two_sloppy_runs_in_a_row_end_it_early() {
+        let mut app = practising("sloppy");
+        let now = Instant::now();
+        app.practice_next(60.0, 12.0, 94.0, now);
+        app.practice_next(60.0, 12.0, 96.0, now);
+        app.practice_next(60.0, 12.0, 93.5, now);
+        assert_eq!(app.phase, Phase::Practice);
+        app.practice_next(60.0, 12.0, 92.0, now);
+        assert_eq!(app.phase, Phase::Dashboard);
+        let msg = &app.message.as_ref().unwrap().0;
+        assert!(msg.contains("93.5%") && msg.contains("92.0%"), "{msg}");
+        assert!(msg.contains("No rush") && !msg.contains("Go"), "{msg}");
+    }
+
+    #[test]
+    fn esc_abandons_a_drill_but_ends_the_block_when_idle() {
+        let mut app = practising("esc");
+        let now = Instant::now();
+        app.handle_key(key(KeyCode::Enter), now);
+        assert!(app.typing);
+        app.handle_key(key(KeyCode::Esc), now);
+        assert!(!app.typing);
+        assert_eq!(app.phase, Phase::Practice);
+        assert!(app.progress.runs.is_empty());
+        app.handle_key(key(KeyCode::Esc), now);
+        assert_eq!(app.phase, Phase::Dashboard);
+    }
+
+    #[test]
+    fn the_coach_doesnt_stop_a_block() {
+        let mut app = practising("cap");
+        let now = now_ms();
+        for i in 0..50 {
+            app.progress.runs.push(Run {
+                t: now - (50 - i) * 60_000,
+                stage: 1,
+                mode: "words".into(),
+                wpm: 12.0,
+                acc: 98.0,
+                secs: 60.0,
+                ..Run::default()
+            });
+        }
+        assert!(app.advice().blocks());
+        app.handle_key(key(KeyCode::Enter), Instant::now());
+        assert!(app.typing);
+    }
+
+    #[test]
+    fn the_practice_screen_shows_only_the_drill() {
+        let mut app = practising("screen");
+        let now = Instant::now();
+        app.practice_next(75.0, 12.0, 97.0, now);
+        let s = text(&draw(&app));
+        assert!(s.contains("8:45 of practice left"), "{s}");
+        assert!(s.contains(Mode::Words.label()), "{s}");
+        assert!(s.contains(app.drill.expected().unwrap()), "{s}");
+        assert!(!s.contains("voyager"), "{s}");
+        assert!(!s.contains(&app.advice().message), "{s}");
+        assert!(!s.to_lowercase().contains("gate"), "{s}");
+        assert!(!s.to_lowercase().contains("oryx"), "{s}");
+        assert!(!s.contains("stage 1 of"), "{s}");
+        for m in [
+            Mode::Recall,
+            Mode::Review,
+            Mode::Real,
+            Mode::Links,
+            Mode::Mirror,
+        ] {
+            assert!(!s.contains(m.label()), "{:?}:\n{s}", m.label());
+        }
+    }
+
+    #[test]
+    fn the_map_appears_only_when_you_hesitate() {
+        let mut app = practising("hint");
+        let now = Instant::now();
+        app.handle_key(key(KeyCode::Enter), now);
+        let mut t = Terminal::new(TestBackend::new(80, 24)).unwrap();
+        t.draw(|f| app.render(f, now)).unwrap();
+        assert!(!text(t.backend().buffer()).contains("voyager"));
+        let later = now + crate::drill::HINT_AFTER + std::time::Duration::from_millis(100);
+        t.draw(|f| app.render(f, later)).unwrap();
+        assert!(text(t.backend().buffer()).contains("voyager"));
     }
 
     #[test]
