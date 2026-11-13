@@ -1675,6 +1675,7 @@ version = "0.3.0"
 dependencies = [
  "anyhow",
  "chrono",
+ "libc",
  "ratatui",
  "serde",
  "serde_json",

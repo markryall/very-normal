@@ -42,6 +42,12 @@ Linux ($VERY_NORMAL_OPEN, where {url} marks the address).
 ";
 
 fn main() -> Result<()> {
+    // Rust ignores SIGPIPE, which turns `very-normal plan | head` into a
+    // "Broken pipe" panic; the default just ends the program quietly.
+    #[cfg(unix)]
+    unsafe {
+        libc::signal(libc::SIGPIPE, libc::SIG_DFL);
+    }
     let args: Vec<String> = std::env::args().skip(1).collect();
     let path = store::default_path();
     if args.is_empty()
