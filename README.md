@@ -126,8 +126,9 @@ In the trainer:
 
 ## The coach
 
-- Aim for 20 minutes a day, in short bursts. It nags until you get there and
-  calls you out for skipping a day.
+- There's no rush. Aim for two 10-minute sessions a day, one in the morning
+  and one later, at least an hour apart. The gap is part of how it sticks.
+  Ten minutes in a day keeps your streak going, and a day off is a rest day.
 - After 15 minutes in a row it tells you to wrap up. After 25, or 45 minutes
   in a day, it won't start a drill unless you press enter twice.
 - A five-minute pause counts as a break.

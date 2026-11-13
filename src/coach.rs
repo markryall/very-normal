@@ -9,8 +9,12 @@ use chrono::{DateTime, Days, Local, NaiveDate, TimeZone};
 
 use crate::store::Run;
 
-/// Minutes a day to aim for.
-pub const DAILY_GOAL: f64 = 20.0;
+/// Minutes of drill time that make a session.
+pub const SESSION_MINUTES: f64 = 10.0;
+/// Sessions a day to aim for: one in the morning, one later on.
+pub const SESSIONS_PER_DAY: usize = 2;
+/// Minutes between runs that start a new session.
+pub const SESSION_GAP: f64 = 60.0;
 /// Minutes a day that count toward a streak.
 pub const STREAK_MIN: f64 = 10.0;
 /// Minutes a day after which the coach sends you away.
@@ -41,6 +45,7 @@ pub struct Advice {
     pub today_minutes: f64,
     pub session_minutes: f64,
     pub streak: u32,
+    pub sessions_today: usize,
 }
 
 impl Advice {
@@ -81,6 +86,31 @@ fn minutes_on(runs: &[Run], date: NaiveDate) -> f64 {
         .map(secs)
         .sum::<f64>()
         / 60.0
+}
+
+/// How many sessions were practised on `date`: runs grouped where one began
+/// at least `SESSION_GAP` minutes after the last ended, counting the groups
+/// with at least `SESSION_MINUTES` of drill time.
+pub fn sessions(runs: &[Run], date: NaiveDate) -> usize {
+    let gap_ms = (SESSION_GAP * 60_000.0) as u64;
+    let mut count = 0;
+    let mut minutes = 0.0;
+    let mut last_end: Option<u64> = None;
+    for run in runs.iter().filter(|r| day(r.t) == date) {
+        let began = run.t.saturating_sub((secs(run) * 1000.0) as u64);
+        if last_end.is_some_and(|end| began.saturating_sub(end) >= gap_ms) {
+            if minutes >= SESSION_MINUTES {
+                count += 1;
+            }
+            minutes = 0.0;
+        }
+        minutes += secs(run) / 60.0;
+        last_end = Some(run.t);
+    }
+    if minutes >= SESSION_MINUTES {
+        count += 1;
+    }
+    count
 }
 
 /// Days in a row with at least `STREAK_MIN` minutes, counting back from today
@@ -191,6 +221,7 @@ pub fn assess(runs: &[Run], now_ms: u64) -> Advice {
     let today = day(now_ms);
     let today_minutes = minutes_on(runs, today);
     let streak = streak(runs, today);
+    let sessions_today = sessions(runs, today);
     let current = session(runs, now_ms);
     let session_minutes = match (current.first(), current.last()) {
         (Some(first), Some(last)) => {
@@ -208,6 +239,7 @@ pub fn assess(runs: &[Run], now_ms: u64) -> Advice {
         today_minutes,
         session_minutes,
         streak,
+        sessions_today,
     };
 
     if session_minutes >= SESSION_LIMIT {
@@ -215,7 +247,7 @@ pub fn assess(runs: &[Run], now_ms: u64) -> Advice {
         return advice(
             Level::Stop,
             format!(
-                "Break time, babe. {} straight is plenty. Hands off for {}: stretch, water, look out a window.",
+                "Time for a break. {} straight is plenty. Hands off for {}: a stretch, some water, a look out the window.",
                 plural(session_minutes, "minute"),
                 plural(wait, "minute")
             ),
@@ -225,7 +257,7 @@ pub fn assess(runs: &[Run], now_ms: u64) -> Advice {
         return advice(
             Level::Stop,
             format!(
-                "{} today. Your fingers have clocked off; the rest happens while you sleep. Come back tomorrow.",
+                "{} today. That's plenty; the rest happens while you sleep. See you tomorrow.",
                 plural(today_minutes, "minute")
             ),
         );
@@ -237,42 +269,53 @@ pub fn assess(runs: &[Run], now_ms: u64) -> Advice {
         return advice(
             Level::Nudge,
             format!(
-                "{} in. Finish this drill, then go stretch.",
+                "{} in. Let this be the last drill for now, then a stretch.",
                 plural(session_minutes, "minute")
             ),
         );
     }
-    if today_minutes >= DAILY_GOAL {
+    let days_in_a_row = |message: String| {
+        if streak >= 2 {
+            format!("{message} {streak} days in a row.")
+        } else {
+            message
+        }
+    };
+    if sessions_today >= SESSIONS_PER_DAY {
         return advice(
             Level::Good,
-            format!(
-                "{} today. Goal smashed. Anything more is a bonus, so keep it short.",
-                plural(today_minutes, "minute")
-            ),
+            days_in_a_row(format!(
+                "{} sessions today. That's the day's practice done; it'll keep settling while you're away.",
+                sessions_today
+            )),
         );
     }
-    let left = DAILY_GOAL - today_minutes;
+    if sessions_today == 1 {
+        let message = if since_last < SESSION_GAP {
+            "One session done. Come back later today for the second; the gap is part of how it sticks."
+        } else {
+            "One session done. The second can start whenever you're ready."
+        };
+        return advice(Level::Good, days_in_a_row(message.to_string()));
+    }
+    let session = SESSION_MINUTES;
     let yesterday = today.checked_sub_days(Days::new(1));
-    let skipped = yesterday.is_some_and(|y| minutes_on(runs, y) < STREAK_MIN) && !runs.is_empty();
-    let message = if today_minutes < 0.5 && skipped {
+    let rested = yesterday.is_some_and(|y| minutes_on(runs, y) == 0.0) && !runs.is_empty();
+    let message = if today_minutes < 0.5 && rested {
         format!(
-            "You skipped yesterday. Don't make it a habit: {DAILY_GOAL:.0} minutes today, in short bursts."
+            "Yesterday was a rest day. No rush: a {session:.0}-minute session today, whenever suits."
         )
     } else if today_minutes < 0.5 {
-        format!("Nothing yet today. {DAILY_GOAL:.0} minutes, in two or three short bursts. Go.")
+        format!(
+            "Nothing yet today. No rush: a {session:.0}-minute session this morning and another later."
+        )
     } else {
         format!(
-            "{} today, {} to go. Keep going, babe.",
-            plural(today_minutes, "minute"),
-            plural(left, "minute")
+            "{} so far. {session:.0} makes a session; take your time.",
+            plural(today_minutes, "minute")
         )
     };
-    let message = if streak >= 2 {
-        format!("{message} {streak}-day streak, don't you dare break it.")
-    } else {
-        message
-    };
-    advice(Level::Nudge, message)
+    advice(Level::Nudge, days_in_a_row(message))
 }
 
 #[cfg(test)]
@@ -311,30 +354,99 @@ mod tests {
             .collect()
     }
 
+    fn calm(message: &str) {
+        for word in [
+            "skipped", "Go.", "habit", "dare", "smashed", "bonus", "babe",
+        ] {
+            assert!(!message.contains(word), "{word:?} in {message}");
+        }
+    }
+
+    /// `count` one-minute runs with 30-second gaps, the last ending at `end`.
+    fn spaced(end: u64, count: u64) -> Vec<Run> {
+        (0..count)
+            .map(|i| run(end - (count - 1 - i) * 90_000, 1.0, 98.0))
+            .collect()
+    }
+
+    fn today() -> NaiveDate {
+        day(noon())
+    }
+
     #[test]
-    fn nags_when_nothing_has_happened() {
+    fn counts_sessions() {
+        assert_eq!(sessions(&spaced(noon(), 10), today()), 1);
+        assert_eq!(sessions(&spaced(noon(), 9), today()), 0);
+
+        let mut apart = spaced(noon() - 180 * MIN, 10);
+        apart.extend(spaced(noon(), 10));
+        assert_eq!(sessions(&apart, today()), 2);
+
+        let mut close = spaced(noon() - 30 * MIN, 10);
+        close.extend(spaced(noon(), 10));
+        assert_eq!(sessions(&close, today()), 1);
+    }
+
+    #[test]
+    fn is_calm_when_nothing_has_happened() {
         let a = assess(&[], noon());
         assert_eq!(a.level, Level::Nudge);
-        assert!(a.message.contains("Nothing yet today"));
+        assert_eq!(a.sessions_today, 0);
+        assert!(a.message.contains("No rush"), "{}", a.message);
+        assert!(a.message.contains("10-minute session"), "{}", a.message);
+        calm(&a.message);
     }
 
     #[test]
-    fn calls_out_a_skipped_day() {
+    fn calls_a_day_off_a_rest_day() {
         let two_days_ago = run(noon() - 48 * 60 * MIN, 15.0, 98.0);
         let a = assess(&[two_days_ago], noon());
-        assert!(a.message.contains("skipped yesterday"), "{}", a.message);
+        assert!(a.message.contains("rest day"), "{}", a.message);
+        calm(&a.message);
     }
 
     #[test]
-    fn counts_down_to_the_goal() {
+    fn says_nothing_about_a_short_day_yesterday() {
+        let yesterday = block(noon() - 24 * 60 * MIN, 9, 1.0);
+        let a = assess(&yesterday, noon());
+        assert!(!a.message.contains("esterday"), "{}", a.message);
+        calm(&a.message);
+    }
+
+    #[test]
+    fn counts_up_to_a_session() {
         let runs = block(noon(), 4, 2.0);
         let a = assess(&runs, noon() + 10 * MIN);
         assert_eq!(a.level, Level::Nudge);
         assert!(
-            a.message.contains("8 minutes today, 12 minutes to go"),
+            a.message.contains("8 minutes so far. 10 makes a session"),
             "{}",
             a.message
         );
+        calm(&a.message);
+    }
+
+    #[test]
+    fn sends_you_away_between_sessions() {
+        let runs = spaced(noon(), 10);
+        let a = assess(&runs, noon() + 20 * MIN);
+        assert_eq!(a.sessions_today, 1);
+        assert!(a.message.contains("later today"), "{}", a.message);
+
+        let a = assess(&runs, noon() + 61 * MIN);
+        assert!(a.message.contains("whenever you're ready"), "{}", a.message);
+        calm(&a.message);
+    }
+
+    #[test]
+    fn two_sessions_is_the_day_done() {
+        let mut runs = spaced(noon() - 180 * MIN, 10);
+        runs.extend(spaced(noon(), 10));
+        let a = assess(&runs, noon() + 10 * MIN);
+        assert_eq!(a.sessions_today, 2);
+        assert_eq!(a.level, Level::Good);
+        assert!(a.message.contains("done"), "{}", a.message);
+        calm(&a.message);
     }
 
     #[test]
@@ -347,7 +459,8 @@ mod tests {
         let runs = block(noon(), 13, 2.0);
         let a = assess(&runs, noon() + MIN);
         assert_eq!(a.level, Level::Stop);
-        assert!(a.message.contains("Break time"));
+        assert!(a.message.contains("break"), "{}", a.message);
+        calm(&a.message);
         assert!(a.blocks());
     }
 
@@ -424,6 +537,7 @@ mod tests {
         }
         let a = assess(&runs, noon());
         assert_eq!(a.streak, 3);
-        assert!(a.message.contains("3-day streak"), "{}", a.message);
+        assert!(a.message.contains("3 days in a row."), "{}", a.message);
+        calm(&a.message);
     }
 }

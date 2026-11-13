@@ -116,9 +116,10 @@ fn main() -> Result<()> {
             let a = coach::assess(&p.runs, now_ms()?);
             println!("{}", a.message);
             println!(
-                "today {:.0}/{:.0} min · {}-day streak · practising stage {}",
+                "today {}/{} sessions · {:.0} min · {}-day streak · practising stage {}",
+                a.sessions_today,
+                coach::SESSIONS_PER_DAY,
                 a.today_minutes,
-                coach::DAILY_GOAL,
                 a.streak,
                 p.stage
             );

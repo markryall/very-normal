@@ -134,8 +134,8 @@ impl App {
             )
         } else {
             (
-                "Skipping the warm-up? Bold. Your wrists will remember this.".into(),
-                false,
+                "Skipping the warm-up. That's fine; go gently for the first minute.".into(),
+                true,
             )
         });
     }
@@ -462,9 +462,9 @@ impl App {
             ),
             Span::styled(
                 format!(
-                    "   today {:.0}/{:.0} min · session {:.0} min",
-                    advice.today_minutes,
-                    coach::DAILY_GOAL,
+                    "   today {}/{} sessions · session {:.0} min",
+                    advice.sessions_today,
+                    coach::SESSIONS_PER_DAY,
                     advice.session_minutes
                 ),
                 dim(),
@@ -989,7 +989,11 @@ mod warmup_tests {
 
         app.handle_key(key(KeyCode::Char('s')), now);
         assert!(app.warmup.is_none());
-        assert!(app.message.as_ref().unwrap().0.contains("Bold"));
+        let skipped = &app.message.as_ref().unwrap().0;
+        assert!(
+            !skipped.contains("Bold") && !skipped.contains("wrists"),
+            "{skipped}"
+        );
         assert_eq!(app.progress.warmed_up, Some(coach::today(now_ms())));
 
         app.handle_key(key(KeyCode::Enter), now);

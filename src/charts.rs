@@ -35,7 +35,7 @@ pub fn html(progress: &Progress, now_ms: u64) -> String {
         "stages": stages,
         "baseline": progress.baseline(),
         "progress": progress,
-        "goal": coach::DAILY_GOAL,
+        "goal": coach::SESSION_MINUTES * coach::SESSIONS_PER_DAY as f64,
         "breakMinutes": coach::BREAK,
         "gate": {
             "wordsAccuracy": gate::WORDS_ACCURACY,
