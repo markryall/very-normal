@@ -4,7 +4,7 @@ use std::time::{Duration, Instant};
 use anyhow::{Context, Result, bail};
 use ratatui::DefaultTerminal;
 use ratatui::crossterm::event::{self, Event, KeyEventKind};
-use very_normal::app::App;
+use very_normal::app::{App, Phase};
 use very_normal::layout;
 use very_normal::optimise::{self, Options};
 use very_normal::store::{self, Progress};
@@ -13,7 +13,8 @@ use very_normal::{charts, coach, corpus, keymap, named, oryx, plans, report};
 const HELP: &str = "\
 very-normal: move your keyboard to a layout made from your own typing
 
-usage: very-normal                  the trainer (TUI)
+usage: very-normal                  a guided session: layout, warm-up, practice
+       very-normal dashboard        the trainer with everything on one screen
        very-normal status           what the coach thinks of your practice today
        very-normal next             the Oryx edits for the next stage, and where to make them
        very-normal check            read the layout from Oryx and compare it with your stage
@@ -54,10 +55,18 @@ fn main() -> Result<()> {
     let plan_file = layout::install()?;
     let words: Vec<&str> = args.iter().map(String::as_str).collect();
     match words.as_slice() {
-        [] => {
+        [] | ["dashboard"] => {
+            let phase = if words.is_empty() {
+                Phase::Layout
+            } else {
+                Phase::Dashboard
+            };
             let progress = Progress::load(&path)?;
             let mut terminal = ratatui::init();
-            let result = run(&mut terminal, App::new(progress, path, Instant::now()));
+            let result = run(
+                &mut terminal,
+                App::new(progress, path, Instant::now(), phase),
+            );
             ratatui::restore();
             result?;
         }

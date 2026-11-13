@@ -98,7 +98,8 @@ searched for.
 ## Use
 
 ```sh
-very-normal                  # the trainer
+very-normal                  # a guided session: the layout, a warm-up, then practice
+very-normal dashboard        # the trainer, with everything on one screen
 very-normal status           # what the coach thinks of your practice today
 very-normal next             # the Oryx edits for the next stage, and the link to make them
 very-normal check            # read the layout from Oryx and compare it with your stage
@@ -115,7 +116,11 @@ very-normal charts           # a page of charts from your progress, opened in th
 very-normal export           # print progress as JSON
 ```
 
-In the trainer:
+A guided session starts with your layout on its own, with the keys that move
+this stage in pink. Press enter for the warm-up (`d` skips straight to the
+dashboard).
+
+In the dashboard:
 
 - `←` `→` change stage. `1`–`6` pick a drill: key recall, new keys, review,
   60 seconds of real text, markdown links, or one-handed mirror practice.

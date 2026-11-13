@@ -22,8 +22,20 @@ const TEAL: Color = Color::Cyan;
 /// Restarts this close together suggest frustration.
 const ABANDON_WINDOW: std::time::Duration = std::time::Duration::from_secs(10 * 60);
 
+/// Where you are in a session: the guided steps, then the dashboard.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Phase {
+    /// The layout on its own, before anything else.
+    Layout,
+    /// The breathing and stretches, every guided session.
+    Warmup,
+    /// Everything: stages, drills, the gate and Oryx.
+    Dashboard,
+}
+
 pub struct App {
     pub progress: Progress,
+    pub phase: Phase,
     path: PathBuf,
     /// The troublesome keys this drill's words lean on.
     leaning: Vec<char>,
@@ -54,7 +66,7 @@ fn now_ms() -> u64 {
 }
 
 impl App {
-    pub fn new(progress: Progress, path: PathBuf, now: Instant) -> App {
+    pub fn new(progress: Progress, path: PathBuf, now: Instant, phase: Phase) -> App {
         let mut rng = Rng::new();
         let stage = progress.stage.min(layout::last());
         let leaning = crate::drill::leaning(Mode::Words, stage, &progress);
@@ -66,6 +78,7 @@ impl App {
         );
         App {
             progress,
+            phase,
             path,
             leaning,
             mode: Mode::Words,
@@ -125,6 +138,9 @@ impl App {
 
     fn end_warmup(&mut self, completed: bool) {
         self.warmup = None;
+        if self.phase == Phase::Warmup {
+            self.phase = Phase::Dashboard;
+        }
         self.progress.warmed_up = Some(coach::today(now_ms()));
         self.save();
         self.message = Some(if completed {
@@ -225,6 +241,19 @@ impl App {
             self.should_quit = true;
             return;
         }
+        if self.phase == Phase::Layout {
+            match key.code {
+                KeyCode::Enter => {
+                    self.phase = Phase::Warmup;
+                    self.warmup = Some(Warmup::new(now));
+                    self.message = None;
+                }
+                KeyCode::Char('d') => self.phase = Phase::Dashboard,
+                KeyCode::Char('q') => self.should_quit = true,
+                _ => {}
+            }
+            return;
+        }
         if let Some(w) = &mut self.warmup {
             match key.code {
                 KeyCode::Enter | KeyCode::Tab | KeyCode::Char(' ') => {
@@ -236,6 +265,7 @@ impl App {
                 KeyCode::Char('s') => self.end_warmup(false),
                 KeyCode::Esc => {
                     self.warmup = None;
+                    self.phase = Phase::Dashboard;
                     self.message = Some((
                         "Warm-up paused. Press enter when you're ready.".into(),
                         true,
@@ -365,6 +395,23 @@ impl App {
     }
 
     pub fn render(&self, frame: &mut Frame, now: Instant) {
+        match self.phase {
+            Phase::Layout => return self.render_layout(frame, now),
+            Phase::Warmup => {
+                let [main, footer] = Layout::vertical([Constraint::Fill(1), Constraint::Length(1)])
+                    .areas(frame.area());
+                if let Some(w) = &self.warmup {
+                    self.render_warmup(frame, main, w, now);
+                }
+                frame.render_widget(
+                    Paragraph::new("enter next step · s skip the warm-up · esc to the dashboard")
+                        .style(dim()),
+                    footer,
+                );
+                return;
+            }
+            Phase::Dashboard => {}
+        }
         // tall enough for the next stage's edits (plus any check) and the gate
         let next_lines = report::next_stage_compact(self.stage(), "").len()
             + if self.check.is_empty() {
@@ -411,6 +458,57 @@ impl App {
             "←/→ stage · 1-6 drill · enter start · u warm-up · n new text · g charts · c check oryx · o open oryx · k/v/w tick · q quit"
         };
         frame.render_widget(Paragraph::new(help).style(dim()), footer);
+    }
+
+    /// The guided session's first screen: just the layout and what's new in it.
+    fn render_layout(&self, frame: &mut Frame, now: Instant) {
+        let s = self.stage();
+        let [title, _, keyboard, _, new_keys, _, footer] = Layout::vertical([
+            Constraint::Length(1),
+            Constraint::Length(1),
+            Constraint::Length(5),
+            Constraint::Length(1),
+            Constraint::Length(2),
+            Constraint::Fill(1),
+            Constraint::Length(1),
+        ])
+        .areas(frame.area());
+        frame.render_widget(
+            Paragraph::new(Line::from(vec![
+                Span::styled(
+                    format!("{}  ", layout::plan().name.to_lowercase()),
+                    Style::new().fg(PINK).add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(
+                    format!("stage {s} of {} · {}", layout::last(), layout::name(s)),
+                    Style::new().add_modifier(Modifier::BOLD),
+                ),
+            ])),
+            title,
+        );
+        self.render_keyboard(frame, keyboard, now);
+        let moved: Vec<String> = layout::changes(s)
+            .iter()
+            .map(|c| c.to.to_string())
+            .collect();
+        let text = if moved.is_empty() {
+            "Nothing moves this stage. Settle in and type.".to_string()
+        } else {
+            format!(
+                "Moving this stage: {}. Take a look at where they live.",
+                moved.join(", ")
+            )
+        };
+        frame.render_widget(
+            Paragraph::new(text)
+                .style(Style::new().fg(PINK))
+                .wrap(Wrap { trim: true }),
+            new_keys,
+        );
+        frame.render_widget(
+            Paragraph::new("enter warm up · d dashboard · q quit").style(dim()),
+            footer,
+        );
     }
 
     fn render_header(&self, frame: &mut Frame, area: Rect) {
@@ -859,7 +957,10 @@ mod tests {
             warmed_up: Some(coach::today(now_ms())),
             ..Default::default()
         };
-        (App::new(p, path.clone(), Instant::now()), path)
+        (
+            App::new(p, path.clone(), Instant::now(), Phase::Dashboard),
+            path,
+        )
     }
 
     fn screen(app: &App) -> String {
@@ -950,7 +1051,7 @@ mod coach_tests {
             warmed_up: Some(coach::today(now_ms())),
             ..Default::default()
         };
-        let mut app = App::new(p, path.clone(), Instant::now());
+        let mut app = App::new(p, path.clone(), Instant::now(), Phase::Dashboard);
         let enter =
             KeyEvent::new_with_kind(KeyCode::Enter, KeyModifiers::NONE, KeyEventKind::Press);
         app.handle_key(enter, Instant::now());
@@ -982,6 +1083,7 @@ mod warmup_tests {
             },
             path.clone(),
             Instant::now(),
+            Phase::Dashboard,
         );
         let now = Instant::now();
         app.handle_key(key(KeyCode::Enter), now);
@@ -1005,7 +1107,12 @@ mod warmup_tests {
     fn enter_steps_through_the_warm_up_to_the_end() {
         let path =
             std::env::temp_dir().join(format!("very-normal-warmup2-{}.json", std::process::id()));
-        let mut app = App::new(Progress::default(), path.clone(), Instant::now());
+        let mut app = App::new(
+            Progress::default(),
+            path.clone(),
+            Instant::now(),
+            Phase::Dashboard,
+        );
         let now = Instant::now();
         app.handle_key(key(KeyCode::Char('u')), now);
         for _ in 0..warmup::STEPS.len() {
@@ -1061,7 +1168,7 @@ mod frustration_tests {
             warmed_up: Some(coach::today(now_ms())),
             ..Default::default()
         };
-        let mut app = App::new(p, path.clone(), Instant::now());
+        let mut app = App::new(p, path.clone(), Instant::now(), Phase::Dashboard);
         let key = |c| KeyEvent::new_with_kind(c, KeyModifiers::NONE, KeyEventKind::Press);
         for _ in 0..3 {
             app.handle_key(key(KeyCode::Enter), Instant::now());
@@ -1069,5 +1176,190 @@ mod frustration_tests {
         }
         assert!(app.message.as_ref().unwrap().0.contains("Frustration"));
         std::fs::remove_file(path).ok();
+    }
+}
+
+#[cfg(test)]
+mod guided_tests {
+    use super::*;
+    use ratatui::Terminal;
+    use ratatui::backend::TestBackend;
+    use ratatui::buffer::Buffer;
+    use ratatui::crossterm::event::KeyEventKind;
+
+    fn key(code: KeyCode) -> KeyEvent {
+        KeyEvent::new_with_kind(code, KeyModifiers::NONE, KeyEventKind::Press)
+    }
+
+    fn ctrl_c() -> KeyEvent {
+        KeyEvent::new_with_kind(
+            KeyCode::Char('c'),
+            KeyModifiers::CONTROL,
+            KeyEventKind::Press,
+        )
+    }
+
+    fn guided(name: &str, warmed_up: Option<String>) -> App {
+        let path = std::env::temp_dir().join(format!(
+            "very-normal-guided-{name}-{}.json",
+            std::process::id()
+        ));
+        let p = Progress {
+            stage: 1,
+            warmed_up,
+            ..Default::default()
+        };
+        App::new(p, path, Instant::now(), Phase::Layout)
+    }
+
+    fn draw(app: &App) -> Buffer {
+        let mut t = Terminal::new(TestBackend::new(80, 24)).unwrap();
+        t.draw(|f| app.render(f, Instant::now())).unwrap();
+        t.backend().buffer().clone()
+    }
+
+    fn text(b: &Buffer) -> String {
+        let w = b.area.width as usize;
+        b.content()
+            .chunks(w)
+            .map(|row| row.iter().map(|c| c.symbol()).collect::<String>())
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    fn assert_quiet(s: &str, app: &App) {
+        assert!(
+            !s.contains(&app.advice().message),
+            "coach message on screen:\n{s}"
+        );
+        assert!(!s.to_lowercase().contains("gate"), "gate on screen:\n{s}");
+        assert!(!s.to_lowercase().contains("oryx"), "oryx on screen:\n{s}");
+        for m in Mode::ALL {
+            assert!(!s.contains(m.label()), "{:?} on screen:\n{s}", m.label());
+        }
+    }
+
+    #[test]
+    fn starts_with_the_layout_on_its_own() {
+        let app = guided("layout", None);
+        let b = draw(&app);
+        let s = text(&b);
+        assert!(s.contains(&layout::plan().name.to_lowercase()), "{s}");
+        assert!(s.contains("stage 1"), "{s}");
+        assert!(s.contains(layout::name(1)), "{s}");
+        assert!(s.contains("voyager"), "{s}");
+        for c in layout::changes(1) {
+            assert!(s.contains("Moving this stage"), "{s}");
+            assert!(s.contains(c.to), "{s}");
+        }
+        let help = s.lines().last().unwrap();
+        for k in ["enter", "d ", "q "] {
+            assert!(help.contains(k), "{help}");
+        }
+        assert_quiet(&s, &app);
+    }
+
+    #[test]
+    fn the_keys_that_move_stand_out() {
+        let app = guided("styles", None);
+        let b = draw(&app);
+        let keys = layout::keys(1);
+        let changed: Vec<char> = (0..30)
+            .filter(|&i| layout::changed_now(1, i))
+            .map(|i| keys[i])
+            .collect();
+        let still = (0..30)
+            .find(|&i| !layout::moved(1, i))
+            .map(|i| keys[i])
+            .unwrap();
+        // the key cells sit inside the border, between the outer-column labels
+        let mut changed_fg = Vec::new();
+        let mut still_fg = Vec::new();
+        for y in 3..6 {
+            for x in 6..41 {
+                let cell = &b[(x, y)];
+                let ch = cell.symbol().chars().next().unwrap_or(' ');
+                if changed.contains(&ch) {
+                    changed_fg.push(cell.fg);
+                }
+                if ch == still {
+                    still_fg.push(cell.fg);
+                }
+            }
+        }
+        assert!(
+            !changed_fg.is_empty() && changed_fg.iter().all(|&c| c == PINK),
+            "{changed_fg:?}"
+        );
+        assert!(
+            !still_fg.is_empty() && still_fg.iter().all(|&c| c != PINK),
+            "{still_fg:?}"
+        );
+    }
+
+    #[test]
+    fn enter_starts_the_warm_up_even_after_one_today() {
+        let mut app = guided("enter", Some(coach::today(now_ms())));
+        app.handle_key(key(KeyCode::Enter), Instant::now());
+        assert_eq!(app.phase, Phase::Warmup);
+        assert!(app.warmup.is_some());
+        let s = text(&draw(&app));
+        assert!(s.contains("warm-up"), "{s}");
+        assert!(!s.contains("voyager"), "{s}");
+        assert_quiet(&s, &app);
+    }
+
+    #[test]
+    fn d_goes_to_the_dashboard_and_q_quits() {
+        let mut app = guided("d", None);
+        app.handle_key(key(KeyCode::Char('d')), Instant::now());
+        assert_eq!(app.phase, Phase::Dashboard);
+
+        let mut app = guided("q", None);
+        app.handle_key(key(KeyCode::Char('q')), Instant::now());
+        assert!(app.should_quit);
+    }
+
+    #[test]
+    fn finishing_the_warm_up_lands_on_the_dashboard_without_another() {
+        let mut app = guided("finish", None);
+        let now = Instant::now();
+        app.handle_key(key(KeyCode::Enter), now);
+        app.tick(now + std::time::Duration::from_secs(Warmup::total() + 1));
+        assert_eq!(app.phase, Phase::Dashboard);
+        assert_eq!(app.progress.warmed_up, Some(coach::today(now_ms())));
+
+        let later = now + std::time::Duration::from_secs(Warmup::total() + 2);
+        app.handle_key(key(KeyCode::Enter), later);
+        assert!(app.warmup.is_none());
+        assert!(app.typing);
+    }
+
+    #[test]
+    fn skipping_or_leaving_the_warm_up() {
+        let mut app = guided("skip", None);
+        app.handle_key(key(KeyCode::Enter), Instant::now());
+        app.handle_key(key(KeyCode::Char('s')), Instant::now());
+        assert_eq!(app.phase, Phase::Dashboard);
+        assert_eq!(app.progress.warmed_up, Some(coach::today(now_ms())));
+
+        let mut app = guided("esc", None);
+        app.handle_key(key(KeyCode::Enter), Instant::now());
+        app.handle_key(key(KeyCode::Esc), Instant::now());
+        assert_eq!(app.phase, Phase::Dashboard);
+        assert_eq!(app.progress.warmed_up, None);
+    }
+
+    #[test]
+    fn ctrl_c_quits_in_every_phase() {
+        for phase in [Phase::Layout, Phase::Warmup, Phase::Dashboard] {
+            let mut app = guided("ctrlc", None);
+            app.phase = phase;
+            if phase == Phase::Warmup {
+                app.warmup = Some(Warmup::new(Instant::now()));
+            }
+            app.handle_key(ctrl_c(), Instant::now());
+            assert!(app.should_quit, "{phase:?}");
+        }
     }
 }
