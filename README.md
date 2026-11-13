@@ -116,9 +116,18 @@ very-normal charts           # a page of charts from your progress, opened in th
 very-normal export           # print progress as JSON
 ```
 
-A guided session starts with your layout on its own, with the keys that move
-this stage in pink. Press enter for the warm-up (`d` skips straight to the
-dashboard).
+A guided session has four steps, one screen each:
+
+1. **Layout**: your layout on its own, with the keys that move this stage in
+   pink. Press enter when you've had a look (`d` skips straight to the
+   dashboard).
+2. **Warm-up**: a minute of slow breathing and hand stretches.
+3. **Practice**: ten minutes of drills picked for you, real text first while
+   you're fresh, then new keys and review. The keyboard only appears when you
+   pause. Two runs in a row under 95% end it early: that's the time to rest.
+4. **Report**: this session against your last few, your slowest keys, what's
+   left before the next stage, and roughly how many sessions the real-text
+   trend says it'll take. There's no rush.
 
 In the dashboard:
 

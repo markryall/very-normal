@@ -113,6 +113,21 @@ pub fn sessions(runs: &[Run], date: NaiveDate) -> usize {
     count
 }
 
+/// Runs split into sessions: a run starts a new one when it began at least
+/// `SESSION_GAP` minutes after the previous run ended. Runs must be in time order.
+pub fn group<'a>(runs: &[&'a Run]) -> Vec<Vec<&'a Run>> {
+    let gap_ms = (SESSION_GAP * 60_000.0) as u64;
+    let mut groups: Vec<Vec<&Run>> = Vec::new();
+    for &run in runs {
+        let began = run.t.saturating_sub((secs(run) * 1000.0) as u64);
+        match groups.last_mut() {
+            Some(g) if began.saturating_sub(g.last().unwrap().t) < gap_ms => g.push(run),
+            _ => groups.push(vec![run]),
+        }
+    }
+    groups
+}
+
 /// Days in a row with at least `STREAK_MIN` minutes, counting back from today
 /// (or from yesterday, if today hasn't got there yet).
 fn streak(runs: &[Run], today: NaiveDate) -> u32 {

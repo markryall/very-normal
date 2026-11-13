@@ -31,6 +31,8 @@ pub enum Phase {
     Warmup,
     /// Ten minutes of drills picked for you.
     Practice,
+    /// How the session went, and how far off the next stage is.
+    Report,
     /// Everything: stages, drills, the gate and Oryx.
     Dashboard,
 }
@@ -53,6 +55,7 @@ pub fn practice_mode(i: usize) -> Mode {
 /// The runs of the practice block under way: their durations and accuracies.
 #[derive(Debug, Default)]
 struct PracticeBlock {
+    started_ms: u64,
     runs: Vec<(f64, f64)>,
 }
 
@@ -83,6 +86,8 @@ pub struct App {
     warmup: Option<Warmup>,
     /// The guided practice block, while it runs.
     block: Option<PracticeBlock>,
+    /// The end-of-session report, once practice is over.
+    report: Vec<String>,
     /// When you recently gave up on a drill with esc; several close together
     /// usually means frustration.
     abandons: Vec<Instant>,
@@ -122,6 +127,7 @@ impl App {
             override_armed: false,
             warmup: None,
             block: None,
+            report: Vec::new(),
             abandons: Vec::new(),
             should_quit: false,
         }
@@ -190,14 +196,21 @@ impl App {
 
     fn start_practice(&mut self, now: Instant) {
         self.phase = Phase::Practice;
-        self.block = Some(PracticeBlock::default());
+        self.block = Some(PracticeBlock {
+            started_ms: now_ms(),
+            ..PracticeBlock::default()
+        });
         self.mode = practice_mode(0);
         self.new_drill(now);
     }
 
     fn end_practice(&mut self, message: String, now: Instant) {
+        let block = self.block.take();
         self.phase = Phase::Dashboard;
-        self.block = None;
+        if let Some(b) = block.filter(|b| !b.runs.is_empty()) {
+            self.phase = Phase::Report;
+            self.report = report::session(&self.progress, self.stage(), b.started_ms);
+        }
         self.message = Some((message, true));
         self.new_drill(now);
     }
@@ -389,6 +402,17 @@ impl App {
             }
             return;
         }
+        if self.phase == Phase::Report {
+            match key.code {
+                KeyCode::Enter => {
+                    self.phase = Phase::Dashboard;
+                    self.message = None;
+                }
+                KeyCode::Char('q') => self.should_quit = true,
+                _ => {}
+            }
+            return;
+        }
         if self.phase == Phase::Practice {
             match key.code {
                 KeyCode::Enter | KeyCode::Tab | KeyCode::Char(' ') => {
@@ -512,6 +536,7 @@ impl App {
                 return;
             }
             Phase::Practice => return self.render_practice(frame, now),
+            Phase::Report => return self.render_report(frame),
             Phase::Dashboard => {}
         }
         // tall enough for the next stage's edits (plus any check) and the gate
@@ -560,6 +585,34 @@ impl App {
             "←/→ stage · 1-6 drill · enter start · u warm-up · n new text · g charts · c check oryx · o open oryx · k/v/w tick · q quit"
         };
         frame.render_widget(Paragraph::new(help).style(dim()), footer);
+    }
+
+    /// The end of a guided session.
+    fn render_report(&self, frame: &mut Frame) {
+        let [main, footer] =
+            Layout::vertical([Constraint::Fill(1), Constraint::Length(1)]).areas(frame.area());
+        let mut lines = Vec::new();
+        if let Some((msg, _)) = &self.message {
+            lines.push(Line::styled(msg.clone(), Style::new().fg(Color::Green)));
+            lines.push(Line::raw(""));
+        }
+        for l in &self.report {
+            lines.push(Line::raw(l.clone()));
+        }
+        frame.render_widget(
+            Paragraph::new(lines)
+                .block(
+                    Block::bordered()
+                        .border_style(Style::new().fg(TEAL))
+                        .title(" this session "),
+                )
+                .wrap(Wrap { trim: true }),
+            main,
+        );
+        frame.render_widget(
+            Paragraph::new("enter dashboard · q quit").style(dim()),
+            footer,
+        );
     }
 
     /// The practice block: the text, the time left, and the map only when you're stuck.
@@ -1554,7 +1607,7 @@ mod guided_tests {
         }
         assert_eq!(app.phase, Phase::Practice, "540 seconds isn't ten minutes");
         app.practice_next(180.0, 12.0, 98.0, now);
-        assert_eq!(app.phase, Phase::Dashboard);
+        assert_eq!(app.phase, Phase::Report);
         assert!(app.block.is_none());
         assert!(app.message.as_ref().unwrap().0.contains("ten minutes"));
     }
@@ -1568,7 +1621,7 @@ mod guided_tests {
         app.practice_next(60.0, 12.0, 93.5, now);
         assert_eq!(app.phase, Phase::Practice);
         app.practice_next(60.0, 12.0, 92.0, now);
-        assert_eq!(app.phase, Phase::Dashboard);
+        assert_eq!(app.phase, Phase::Report);
         let msg = &app.message.as_ref().unwrap().0;
         assert!(msg.contains("93.5%") && msg.contains("92.0%"), "{msg}");
         assert!(msg.contains("No rush") && !msg.contains("Go"), "{msg}");
@@ -1631,6 +1684,42 @@ mod guided_tests {
         ] {
             assert!(!s.contains(m.label()), "{:?}:\n{s}", m.label());
         }
+    }
+
+    #[test]
+    fn the_report_shows_after_practice_then_the_dashboard() {
+        let mut app = practising("report");
+        let now = Instant::now();
+        app.handle_key(key(KeyCode::Enter), now);
+        while let Some(c) = app.drill.expected() {
+            app.handle_key(
+                key(KeyCode::Char(c)),
+                now + std::time::Duration::from_secs(1),
+            );
+            if !app.typing {
+                break;
+            }
+        }
+        app.handle_key(key(KeyCode::Esc), now);
+        assert_eq!(app.phase, Phase::Report);
+        assert!(!app.report.is_empty());
+        let s = text(&draw(&app));
+        assert!(s.contains(&app.report[0][..20]), "{s}");
+        let help = s.lines().last().unwrap();
+        assert!(help.contains("enter") && help.contains("q "), "{help}");
+        for m in Mode::ALL {
+            assert!(
+                !s.contains(&format!(" {} ", m.label())) || m == Mode::Real,
+                "{s}"
+            );
+        }
+        app.handle_key(key(KeyCode::Enter), now);
+        assert_eq!(app.phase, Phase::Dashboard);
+
+        let mut app = practising("report-q");
+        app.practice_next(600.0, 12.0, 98.0, Instant::now());
+        app.handle_key(key(KeyCode::Char('q')), Instant::now());
+        assert!(app.should_quit);
     }
 
     #[test]
