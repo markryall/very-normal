@@ -13,6 +13,7 @@ use ratatui::widgets::{Block, Paragraph, Wrap};
 use crate::drill::{Drill, Mode, Rng, build};
 use crate::gate;
 use crate::layout;
+use crate::music::Music;
 use crate::store::{Progress, Run};
 use crate::warmup::{self, Warmup};
 use crate::{coach, oryx, report};
@@ -88,6 +89,8 @@ pub struct App {
     block: Option<PracticeBlock>,
     /// The end-of-session report, once practice is over.
     report: Vec<String>,
+    /// Background music, while it plays.
+    music: Music,
     /// When you recently gave up on a drill with esc; several close together
     /// usually means frustration.
     abandons: Vec<Instant>,
@@ -128,6 +131,7 @@ impl App {
             warmup: None,
             block: None,
             report: Vec::new(),
+            music: Music::default(),
             abandons: Vec::new(),
             should_quit: false,
         }
@@ -159,6 +163,9 @@ impl App {
 
     /// Ends a timed drill once its minute is up.
     pub fn tick(&mut self, now: Instant) {
+        if self.music.ended() {
+            self.message = Some(("The music stream stopped.".into(), false));
+        }
         if self.warmup.as_ref().is_some_and(|w| w.done(now)) {
             self.end_warmup(true, now);
         }
@@ -192,6 +199,27 @@ impl App {
                 true,
             )
         });
+    }
+
+    fn toggle_music(&mut self) {
+        if self.music.playing() {
+            self.music.stop();
+            self.message = None;
+        } else {
+            self.message = match self.music.start() {
+                Ok(()) => None,
+                Err(e) => Some((e, false)),
+            };
+        }
+    }
+
+    /// The music key, for the help lines that offer it.
+    fn music_help(&self) -> &'static str {
+        if self.music.playing() {
+            "m stop music"
+        } else {
+            "m music"
+        }
     }
 
     fn start_practice(&mut self, now: Instant) {
@@ -332,6 +360,12 @@ impl App {
     pub fn handle_key(&mut self, key: KeyEvent, now: Instant) {
         if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c') {
             self.should_quit = true;
+            return;
+        }
+        if key.code == KeyCode::Char('m')
+            && matches!(self.phase, Phase::Layout | Phase::Warmup | Phase::Report)
+        {
+            self.toggle_music();
             return;
         }
         if self.phase == Phase::Layout {
@@ -529,8 +563,11 @@ impl App {
                     self.render_warmup(frame, main, w, now);
                 }
                 frame.render_widget(
-                    Paragraph::new("enter next step · s skip the warm-up · esc to the dashboard")
-                        .style(dim()),
+                    Paragraph::new(format!(
+                        "enter next step · s skip the warm-up · {} · esc start practising",
+                        self.music_help()
+                    ))
+                    .style(dim()),
                     footer,
                 );
                 return;
@@ -610,7 +647,8 @@ impl App {
             main,
         );
         frame.render_widget(
-            Paragraph::new("enter dashboard · q quit").style(dim()),
+            Paragraph::new(format!("enter dashboard · {} · q quit", self.music_help()))
+                .style(dim()),
             footer,
         );
     }
@@ -673,11 +711,13 @@ impl App {
     /// The guided session's first screen: just the layout and what's new in it.
     fn render_layout(&self, frame: &mut Frame, now: Instant) {
         let s = self.stage();
-        let [title, _, keyboard, _, new_keys, _, footer] = Layout::vertical([
+        let [title, _, keyboard, _, new_keys, scene, message, _, footer] = Layout::vertical([
             Constraint::Length(1),
             Constraint::Length(1),
             Constraint::Length(5),
             Constraint::Length(1),
+            Constraint::Length(2),
+            Constraint::Length(2),
             Constraint::Length(2),
             Constraint::Fill(1),
             Constraint::Length(1),
@@ -716,7 +756,27 @@ impl App {
             new_keys,
         );
         frame.render_widget(
-            Paragraph::new("enter warm up · d dashboard · q quit").style(dim()),
+            Paragraph::new(
+                "Find a quiet place where you won't be interrupted. Headphones on, something gentle playing. There's no rush.",
+            )
+            .style(Style::new().fg(TEAL))
+            .wrap(Wrap { trim: true }),
+            scene,
+        );
+        if let Some((msg, _)) = &self.message {
+            frame.render_widget(
+                Paragraph::new(msg.clone())
+                    .style(Style::new().fg(Color::Yellow))
+                    .wrap(Wrap { trim: true }),
+                message,
+            );
+        }
+        frame.render_widget(
+            Paragraph::new(format!(
+                "enter warm up · {} · d dashboard · q quit",
+                self.music_help()
+            ))
+            .style(dim()),
             footer,
         );
     }
@@ -1720,6 +1780,26 @@ mod guided_tests {
         app.practice_next(600.0, 12.0, 98.0, Instant::now());
         app.handle_key(key(KeyCode::Char('q')), Instant::now());
         assert!(app.should_quit);
+    }
+
+    #[test]
+    fn the_layout_sets_the_scene_and_offers_music() {
+        let app = guided("scene", None);
+        let s = text(&draw(&app)).replace('\n', " ");
+        assert!(s.contains("quiet place"), "{s}");
+        assert!(s.contains("Headphones"), "{s}");
+        assert!(s.contains("gentle"), "{s}");
+        assert!(s.lines().last().unwrap().contains("m music"), "{s}");
+    }
+
+    #[test]
+    fn m_is_just_a_letter_while_practising() {
+        let mut app = practising("m");
+        let now = Instant::now();
+        app.handle_key(key(KeyCode::Enter), now);
+        app.handle_key(key(KeyCode::Char('m')), now);
+        assert!(!app.music.playing());
+        assert!(app.typing);
     }
 
     #[test]

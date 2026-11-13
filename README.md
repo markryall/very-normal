@@ -116,6 +116,13 @@ very-normal charts           # a page of charts from your progress, opened in th
 very-normal export           # print progress as JSON
 ```
 
+Find a quiet place where you won't be interrupted, and put headphones on.
+On the layout, warm-up and report screens, `m` plays gentle music in the
+background: SomaFM's Drone Zone, an ambient Icecast stream, unless
+`VERY_NORMAL_MUSIC` names another stream or file. It needs `mpv`
+(`brew install mpv`) or `ffplay`, and stops when the tutor does. Any gentle
+music you like works just as well.
+
 A guided session has four steps, one screen each:
 
 1. **Layout**: your layout on its own, with the keys that move this stage in

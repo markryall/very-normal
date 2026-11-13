@@ -6,6 +6,7 @@ pub mod drill;
 pub mod gate;
 pub mod keymap;
 pub mod layout;
+pub mod music;
 pub mod named;
 pub mod optimise;
 pub mod oryx;
