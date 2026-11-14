@@ -654,10 +654,11 @@ impl App {
     }
 
     /// The practice block: the text, the time left, and the map only when you're stuck.
+    /// The map's rows are always reserved, so the text never jumps when it appears.
     fn render_practice(&self, frame: &mut Frame, now: Instant) {
         let hinting = self.typing && self.drill.hesitating(now);
         let [keyboard, main, footer] = Layout::vertical([
-            Constraint::Length(if hinting { 5 } else { 0 }),
+            Constraint::Length(5),
             Constraint::Fill(1),
             Constraint::Length(1),
         ])
@@ -1813,6 +1814,25 @@ mod guided_tests {
         let later = now + crate::drill::HINT_AFTER + std::time::Duration::from_millis(100);
         t.draw(|f| app.render(f, later)).unwrap();
         assert!(text(t.backend().buffer()).contains("voyager"));
+    }
+
+    #[test]
+    fn the_text_stays_put_when_the_map_appears() {
+        let mut app = practising("still");
+        let now = Instant::now();
+        app.handle_key(key(KeyCode::Enter), now);
+        let mut t = Terminal::new(TestBackend::new(80, 24)).unwrap();
+        let practice_row = |t: &Terminal<TestBackend>| {
+            text(t.backend().buffer())
+                .lines()
+                .position(|l| l.contains(" practice "))
+        };
+        t.draw(|f| app.render(f, now)).unwrap();
+        let before = practice_row(&t);
+        let later = now + crate::drill::HINT_AFTER + std::time::Duration::from_millis(100);
+        t.draw(|f| app.render(f, later)).unwrap();
+        assert!(before.is_some());
+        assert_eq!(before, practice_row(&t));
     }
 
     #[test]
