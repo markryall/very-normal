@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.4.0 - 2026-11-14
+
 - Plain `very-normal` starts a guided session. It shows the layout on its own, then the warm-up, then ten minutes of practice it picks for you, real text first. It stops early after two sloppy runs. The old screen moves to `very-normal dashboard`.
 - The guided session ends with a report: this session against recent ones, your slowest keys, and an unhurried look at the next stage.
 - The guided session suggests a quiet place and headphones, and `m` plays an ambient stream in the background.
