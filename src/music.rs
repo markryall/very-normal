@@ -18,8 +18,10 @@ fn url_from(var: Option<String>) -> String {
 
 /// The command that plays `url`, given which programs are on the PATH.
 pub fn player_command(url: &str, available: impl Fn(&str) -> bool) -> Option<Vec<String>> {
+    // --no-terminal: without it mpv opens /dev/tty for its own shortcuts, even with
+    // stdin closed, and steals the keys you type.
     let parts: &[&str] = if available("mpv") {
-        &["mpv", "--no-video", "--really-quiet"]
+        &["mpv", "--no-video", "--no-terminal"]
     } else if available("ffplay") {
         &["ffplay", "-nodisp", "-loglevel", "quiet"]
     } else {
@@ -102,7 +104,7 @@ mod tests {
     #[test]
     fn prefers_mpv_then_ffplay() {
         let cmd = player_command("u", |_| true).unwrap();
-        assert_eq!(cmd, ["mpv", "--no-video", "--really-quiet", "u"]);
+        assert_eq!(cmd, ["mpv", "--no-video", "--no-terminal", "u"]);
         let cmd = player_command("u", |p| p == "ffplay").unwrap();
         assert_eq!(cmd, ["ffplay", "-nodisp", "-loglevel", "quiet", "u"]);
         assert_eq!(player_command("u", |_| false), None);

@@ -6,7 +6,8 @@
 - The guided session ends with a report: this session against recent ones, your slowest keys, and an unhurried look at the next stage.
 - The guided session suggests a quiet place and headphones, and `m` plays an ambient stream in the background.
 - The coach counts two calm 10-minute sessions a day instead of nagging toward 20 minutes.
-- The practice text stays put when you pause. The key map's rows are always reserved, so the map lights up in place instead of pushing the text down.
+- The practice screen shows the key map the whole time and nothing on it changes when you pause, so the text never moves while you type.
+- Keys you type while the music plays reach the drill. mpv used to read the terminal itself and swallow some of them.
 - Exits quietly when a pipe closes early instead of panicking on a broken pipe.
 
 ## 0.3.0 - 2026-11-13
